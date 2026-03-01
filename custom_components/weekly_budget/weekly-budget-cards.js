@@ -262,17 +262,21 @@ class WeeklyBudgetExpensesCard extends HTMLElement {
       var e = exps[i];
       var ea = parseFloat(e.amount) || 0;
       total += ea;
-      var ts = e.timestamp ? new Date(e.timestamp).toLocaleString() : '';
+      var dateStr = '';
+      if (e.timestamp) {
+        var d = new Date(e.timestamp);
+        dateStr = (d.getMonth() + 1) + '/' + d.getDate();
+      }
+      var user = e.user || 'Unknown';
+      var desc = e.description || '';
       h +=
-        '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f1f1f1">' +
-          '<div>' +
-            '<div style="font-weight:600">' + (e.description || '') + '</div>' +
-            '<div style="font-size:12px;color:#888">' + (e.user || 'Unknown') + (ts ? ' - ' + ts : '') + '</div>' +
-          '</div>' +
-          '<div style="font-weight:700;color:#dc2626;white-space:nowrap;margin-left:12px">' + cur + ea.toFixed(2) + '</div>' +
+        '<div style="padding:4px 0;font-size:14px;line-height:1.6">' +
+          '<span style="color:#888">' + dateStr + '</span> ' +
+          '<span style="font-weight:600">' + cur + ea.toFixed(2) + '</span>' +
+          ' - ' + user + ': ' + desc +
         '</div>';
     }
-    h += '<div style="margin-top:12px;padding-top:12px;border-top:2px solid #e5e7eb;display:flex;justify-content:space-between;font-weight:700">' +
+    h += '<div style="margin-top:8px;padding-top:8px;border-top:2px solid #e5e7eb;display:flex;justify-content:space-between;font-weight:700">' +
       '<span>Total</span><span>' + cur + total.toFixed(2) + '</span></div>';
     listEl.innerHTML = h;
   }
