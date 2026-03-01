@@ -8,129 +8,6 @@
  * - Reset button
  */
 
-/**
- * Config editor for the Weekly Budget Overview Card
- * Provides a visual UI in the Lovelace card picker instead of raw YAML.
- */
-class WeeklyBudgetCardEditor extends HTMLElement {
-  constructor() {
-    super();
-    this.attachShadow({ mode: "open" });
-    this._config = {};
-    this._hass = null;
-  }
-
-  set hass(hass) {
-    this._hass = hass;
-    this._buildEntityPicker();
-  }
-
-  setConfig(config) {
-    this._config = { ...config };
-    this._render();
-  }
-
-  _render() {
-    this.shadowRoot.innerHTML = `
-      <style>
-        .editor {
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-          padding: 16px 0;
-        }
-        .field {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-        label {
-          font-size: 13px;
-          font-weight: 500;
-          color: var(--primary-text-color);
-        }
-        .hint {
-          font-size: 11px;
-          color: var(--secondary-text-color);
-        }
-        select, input {
-          padding: 8px 12px;
-          border: 1px solid var(--divider-color, #e5e7eb);
-          border-radius: 8px;
-          font-size: 14px;
-          background: var(--card-background-color, #fff);
-          color: var(--primary-text-color);
-          outline: none;
-        }
-        select:focus, input:focus {
-          border-color: var(--primary-color, #03a9f4);
-        }
-      </style>
-      <div class="editor">
-        <div class="field">
-          <label for="entity">Entity</label>
-          <select id="entity"></select>
-          <span class="hint">Select the weekly_budget_remaining sensor</span>
-        </div>
-      </div>
-    `;
-    this._buildEntityPicker();
-  }
-
-  _buildEntityPicker() {
-    if (!this._hass || !this.shadowRoot) return;
-    const select = this.shadowRoot.getElementById("entity");
-    if (!select) return;
-
-    const entities = Object.keys(this._hass.states)
-      .filter((eid) => eid.startsWith("sensor.weekly_budget"))
-      .sort();
-
-    select.innerHTML = `
-      <option value="">-- Select entity --</option>
-      ${entities
-        .map(
-          (eid) =>
-            `<option value="${eid}" ${eid === this._config.entity ? "selected" : ""}>${eid}</option>`
-        )
-        .join("")}
-    `;
-
-    // If no weekly_budget entities, show all sensors as fallback
-    if (entities.length === 0) {
-      const allSensors = Object.keys(this._hass.states)
-        .filter((eid) => eid.startsWith("sensor."))
-        .sort();
-      select.innerHTML = `
-        <option value="">-- Select entity --</option>
-        ${allSensors
-          .map(
-            (eid) =>
-              `<option value="${eid}" ${eid === this._config.entity ? "selected" : ""}>${eid}</option>`
-          )
-          .join("")}
-      `;
-    }
-
-    select.addEventListener("change", (ev) => {
-      this._config = { ...this._config, entity: ev.target.value };
-      this._fireChanged();
-    });
-  }
-
-  _fireChanged() {
-    const event = new CustomEvent("config-changed", {
-      detail: { config: this._config },
-      bubbles: true,
-      composed: true,
-    });
-    this.dispatchEvent(event);
-  }
-}
-
-customElements.define("weekly-budget-card-editor", WeeklyBudgetCardEditor);
-
-
 class WeeklyBudgetCard extends HTMLElement {
   constructor() {
     super();
@@ -501,12 +378,38 @@ class WeeklyBudgetCard extends HTMLElement {
     return 5;
   }
 
-  static getConfigElement() {
-    return document.createElement("weekly-budget-card-editor");
+  static getConfigForm() {
+    return {
+      schema: [
+        {
+          name: "entity",
+          required: true,
+          selector: {
+            entity: {
+              domain: "sensor",
+              integration: "weekly_budget",
+            },
+          },
+        },
+      ],
+      computeLabel: (schema) => {
+        if (schema.name === "entity") return "Budget Entity";
+        return undefined;
+      },
+      computeHelper: (schema) => {
+        if (schema.name === "entity")
+          return "Select the weekly_budget_remaining sensor";
+        return undefined;
+      },
+    };
   }
 
-  static getStubConfig() {
-    return { entity: "sensor.weekly_budget_remaining" };
+  static getStubConfig(hass) {
+    // Try to find the remaining sensor automatically
+    const entities = Object.keys(hass.states).filter((eid) =>
+      eid.startsWith("sensor.weekly_budget_remaining")
+    );
+    return { entity: entities[0] || "sensor.weekly_budget_remaining" };
   }
 }
 

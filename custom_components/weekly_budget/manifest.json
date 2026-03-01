@@ -8,5 +8,5 @@
   "issue_tracker": "https://github.com/your-repo/ha-weekly-budget/issues",
   "version": "1.0.0",
   "requirements": [],
-  "dependencies": ["frontend"]
+  "dependencies": ["frontend", "lovelace"]
 }

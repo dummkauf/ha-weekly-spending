@@ -5,179 +5,6 @@
  * including the description, user, amount, and timestamp.
  */
 
-/**
- * Config editor for the Weekly Budget Expenses Card
- * Provides a visual UI in the Lovelace card picker instead of raw YAML.
- */
-class WeeklyBudgetExpensesCardEditor extends HTMLElement {
-  constructor() {
-    super();
-    this.attachShadow({ mode: "open" });
-    this._config = {};
-    this._hass = null;
-  }
-
-  set hass(hass) {
-    this._hass = hass;
-    this._buildUI();
-  }
-
-  setConfig(config) {
-    this._config = { ...config };
-    this._render();
-  }
-
-  _render() {
-    this.shadowRoot.innerHTML = `
-      <style>
-        .editor {
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-          padding: 16px 0;
-        }
-        .field {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-        label {
-          font-size: 13px;
-          font-weight: 500;
-          color: var(--primary-text-color);
-        }
-        .hint {
-          font-size: 11px;
-          color: var(--secondary-text-color);
-        }
-        select, input {
-          padding: 8px 12px;
-          border: 1px solid var(--divider-color, #e5e7eb);
-          border-radius: 8px;
-          font-size: 14px;
-          background: var(--card-background-color, #fff);
-          color: var(--primary-text-color);
-          outline: none;
-        }
-        select:focus, input:focus {
-          border-color: var(--primary-color, #03a9f4);
-        }
-        .row {
-          display: flex;
-          gap: 12px;
-        }
-        .row .field {
-          flex: 1;
-        }
-      </style>
-      <div class="editor">
-        <div class="field">
-          <label for="entity">Entity</label>
-          <select id="entity"></select>
-          <span class="hint">Select the weekly_budget_remaining or weekly_budget_spent sensor</span>
-        </div>
-        <div class="field">
-          <label for="title">Card Title</label>
-          <input type="text" id="title" placeholder="Expenses This Week" value="${this._config.title || ""}" />
-        </div>
-        <div class="row">
-          <div class="field">
-            <label for="max_items">Max Items</label>
-            <input type="number" id="max_items" min="1" max="200" placeholder="50" value="${this._config.max_items || ""}" />
-            <span class="hint">Maximum expenses to show</span>
-          </div>
-          <div class="field">
-            <label for="show_total">Show Total</label>
-            <select id="show_total">
-              <option value="true" ${this._config.show_total !== false ? "selected" : ""}>Yes</option>
-              <option value="false" ${this._config.show_total === false ? "selected" : ""}>No</option>
-            </select>
-          </div>
-        </div>
-      </div>
-    `;
-    this._buildUI();
-  }
-
-  _buildUI() {
-    if (!this._hass || !this.shadowRoot) return;
-    const select = this.shadowRoot.getElementById("entity");
-    if (!select) return;
-
-    const entities = Object.keys(this._hass.states)
-      .filter((eid) => eid.startsWith("sensor.weekly_budget"))
-      .sort();
-
-    select.innerHTML = `
-      <option value="">-- Select entity --</option>
-      ${entities
-        .map(
-          (eid) =>
-            `<option value="${eid}" ${eid === this._config.entity ? "selected" : ""}>${eid}</option>`
-        )
-        .join("")}
-    `;
-
-    if (entities.length === 0) {
-      const allSensors = Object.keys(this._hass.states)
-        .filter((eid) => eid.startsWith("sensor."))
-        .sort();
-      select.innerHTML = `
-        <option value="">-- Select entity --</option>
-        ${allSensors
-          .map(
-            (eid) =>
-              `<option value="${eid}" ${eid === this._config.entity ? "selected" : ""}>${eid}</option>`
-          )
-          .join("")}
-      `;
-    }
-
-    // Wire up all change events
-    select.addEventListener("change", (ev) => {
-      this._config = { ...this._config, entity: ev.target.value };
-      this._fireChanged();
-    });
-
-    const titleEl = this.shadowRoot.getElementById("title");
-    if (titleEl) {
-      titleEl.addEventListener("input", (ev) => {
-        this._config = { ...this._config, title: ev.target.value || undefined };
-        this._fireChanged();
-      });
-    }
-
-    const maxEl = this.shadowRoot.getElementById("max_items");
-    if (maxEl) {
-      maxEl.addEventListener("input", (ev) => {
-        const val = parseInt(ev.target.value);
-        this._config = { ...this._config, max_items: val > 0 ? val : undefined };
-        this._fireChanged();
-      });
-    }
-
-    const showTotalEl = this.shadowRoot.getElementById("show_total");
-    if (showTotalEl) {
-      showTotalEl.addEventListener("change", (ev) => {
-        this._config = { ...this._config, show_total: ev.target.value === "true" };
-        this._fireChanged();
-      });
-    }
-  }
-
-  _fireChanged() {
-    const event = new CustomEvent("config-changed", {
-      detail: { config: this._config },
-      bubbles: true,
-      composed: true,
-    });
-    this.dispatchEvent(event);
-  }
-}
-
-customElements.define("weekly-budget-expenses-card-editor", WeeklyBudgetExpensesCardEditor);
-
-
 class WeeklyBudgetExpensesCard extends HTMLElement {
   constructor() {
     super();
@@ -467,12 +294,73 @@ class WeeklyBudgetExpensesCard extends HTMLElement {
     return 4;
   }
 
-  static getConfigElement() {
-    return document.createElement("weekly-budget-expenses-card-editor");
+  static getConfigForm() {
+    return {
+      schema: [
+        {
+          name: "entity",
+          required: true,
+          selector: {
+            entity: {
+              domain: "sensor",
+              integration: "weekly_budget",
+            },
+          },
+        },
+        {
+          name: "title",
+          selector: { text: {} },
+        },
+        {
+          type: "grid",
+          name: "",
+          schema: [
+            {
+              name: "max_items",
+              selector: {
+                number: {
+                  min: 1,
+                  max: 200,
+                  mode: "box",
+                },
+              },
+            },
+            {
+              name: "show_total",
+              selector: { boolean: {} },
+            },
+          ],
+        },
+      ],
+      computeLabel: (schema) => {
+        const labels = {
+          entity: "Budget Entity",
+          title: "Card Title",
+          max_items: "Max Expenses to Show",
+          show_total: "Show Total",
+        };
+        return labels[schema.name] || undefined;
+      },
+      computeHelper: (schema) => {
+        if (schema.name === "entity")
+          return "Select any weekly_budget sensor";
+        if (schema.name === "title")
+          return 'Default: "Expenses This Week"';
+        return undefined;
+      },
+    };
   }
 
-  static getStubConfig() {
-    return { entity: "sensor.weekly_budget_remaining" };
+  static getStubConfig(hass) {
+    const entities = Object.keys(hass.states).filter((eid) =>
+      eid.startsWith("sensor.weekly_budget_remaining")
+    );
+    return {
+      entity: entities[0] || "sensor.weekly_budget_remaining",
+      title: "Expenses This Week",
+      max_items: 50,
+      show_total: true,
+    };
   }
 }
 
