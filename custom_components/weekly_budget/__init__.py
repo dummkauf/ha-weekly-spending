@@ -23,8 +23,11 @@ from .const import (
     STORAGE_VERSION,
     CONF_WEEKLY_LIMIT,
     CONF_CURRENCY,
+    CONF_WEEK_START_DAY,
     DEFAULT_WEEKLY_LIMIT,
     DEFAULT_CURRENCY,
+    DEFAULT_WEEK_START_DAY,
+    DAYS_OF_WEEK,
     ATTR_AMOUNT,
     ATTR_DESCRIPTION,
     ATTR_USER,
@@ -64,12 +67,20 @@ SET_LIMIT_SCHEMA = vol.Schema(
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
-def _monday_of_week(dt: datetime | None = None) -> str:
-    """Return the Monday of the current week as an ISO date string."""
+def _start_of_week(start_day: str = DEFAULT_WEEK_START_DAY, dt: datetime | None = None) -> str:
+    """Return the start of the current week as an ISO date string.
+
+    ``start_day`` is one of the DAYS_OF_WEEK strings (e.g. "monday",
+    "sunday").  The function calculates how many days back from *dt*
+    (default: now) to reach the most-recent occurrence of that weekday.
+    """
     if dt is None:
         dt = datetime.now()
-    monday = dt - timedelta(days=dt.weekday())
-    return monday.strftime("%Y-%m-%d")
+    day_index = DAYS_OF_WEEK.index(start_day) if start_day in DAYS_OF_WEEK else 0
+    # dt.weekday(): Monday=0 ... Sunday=6  -- same order as DAYS_OF_WEEK
+    days_back = (dt.weekday() - day_index) % 7
+    start = dt - timedelta(days=days_back)
+    return start.strftime("%Y-%m-%d")
 
 
 def _read_version() -> str:
@@ -169,9 +180,10 @@ class BudgetData:
         self._store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY}_{entry.entry_id}")
         self.weekly_limit: float = entry.data.get(CONF_WEEKLY_LIMIT, DEFAULT_WEEKLY_LIMIT)
         self.currency: str = entry.data.get(CONF_CURRENCY, DEFAULT_CURRENCY)
+        self.week_start_day: str = entry.data.get(CONF_WEEK_START_DAY, DEFAULT_WEEK_START_DAY)
         self.rollover: float = 0.0
         self.expenses: list[dict[str, Any]] = []
-        self.week_start: str = _monday_of_week()
+        self.week_start: str = _start_of_week(self.week_start_day)
 
     async def async_load(self) -> None:
         data = await self._store.async_load()
@@ -179,21 +191,22 @@ class BudgetData:
             self.weekly_limit = data.get(ATTR_WEEKLY_LIMIT, self.weekly_limit)
             self.rollover = data.get(ATTR_ROLLOVER, 0.0)
             self.expenses = data.get(ATTR_EXPENSES, [])
-            self.week_start = data.get(ATTR_WEEK_START, _monday_of_week())
+            self.week_start = data.get(ATTR_WEEK_START, _start_of_week(self.week_start_day))
             self.currency = data.get("currency", self.currency)
         self._check_week_rollover()
 
     def _check_week_rollover(self) -> None:
-        current_monday = _monday_of_week()
-        if self.week_start != current_monday:
+        current_start = _start_of_week(self.week_start_day)
+        if self.week_start != current_start:
             spent = self.total_spent
             effective_budget = self.weekly_limit + self.rollover
             remaining = effective_budget - spent
             self.rollover = remaining
             self.expenses = []
-            self.week_start = current_monday
+            self.week_start = current_start
             _LOGGER.info(
-                "New week detected. Rollover: %s%.2f",
+                "New week detected (start day: %s). Rollover: %s%.2f",
+                self.week_start_day,
                 self.currency,
                 self.rollover,
             )
@@ -238,7 +251,7 @@ class BudgetData:
     async def async_reset_budget(self) -> None:
         self.rollover = 0.0
         self.expenses = []
-        self.week_start = _monday_of_week()
+        self.week_start = _start_of_week(self.week_start_day)
         await self.async_save()
         async_dispatcher_send(self.hass, SIGNAL_BUDGET_UPDATED)
 

@@ -13,8 +13,11 @@ from .const import (
     DOMAIN,
     CONF_WEEKLY_LIMIT,
     CONF_CURRENCY,
+    CONF_WEEK_START_DAY,
     DEFAULT_WEEKLY_LIMIT,
     DEFAULT_CURRENCY,
+    DEFAULT_WEEK_START_DAY,
+    DAYS_OF_WEEK,
 )
 
 
@@ -32,6 +35,7 @@ class WeeklyBudgetConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             weekly_limit = user_input.get(CONF_WEEKLY_LIMIT, DEFAULT_WEEKLY_LIMIT)
             currency = user_input.get(CONF_CURRENCY, DEFAULT_CURRENCY)
+            week_start_day = user_input.get(CONF_WEEK_START_DAY, DEFAULT_WEEK_START_DAY)
 
             if weekly_limit <= 0:
                 errors[CONF_WEEKLY_LIMIT] = "invalid_limit"
@@ -41,6 +45,7 @@ class WeeklyBudgetConfigFlow(ConfigFlow, domain=DOMAIN):
                     data={
                         CONF_WEEKLY_LIMIT: weekly_limit,
                         CONF_CURRENCY: currency,
+                        CONF_WEEK_START_DAY: week_start_day,
                     },
                 )
 
@@ -52,6 +57,9 @@ class WeeklyBudgetConfigFlow(ConfigFlow, domain=DOMAIN):
                 vol.Optional(
                     CONF_CURRENCY, default=DEFAULT_CURRENCY
                 ): cv.string,
+                vol.Optional(
+                    CONF_WEEK_START_DAY, default=DEFAULT_WEEK_START_DAY
+                ): vol.In(DAYS_OF_WEEK),
             }
         )
 

@@ -6,9 +6,21 @@ STORAGE_VERSION = 1
 
 CONF_WEEKLY_LIMIT = "weekly_limit"
 CONF_CURRENCY = "currency"
+CONF_WEEK_START_DAY = "week_start_day"
 
 DEFAULT_WEEKLY_LIMIT = 200.00
 DEFAULT_CURRENCY = "$"
+DEFAULT_WEEK_START_DAY = "monday"
+
+DAYS_OF_WEEK = [
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+]
 
 ATTR_AMOUNT = "amount"
 ATTR_DESCRIPTION = "description"
