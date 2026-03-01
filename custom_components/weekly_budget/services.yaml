@@ -20,13 +20,6 @@ add_expense:
       example: "Groceries"
       selector:
         text:
-    user:
-      name: User
-      description: Name of the person who made the expense (optional, defaults to "Unknown").
-      required: false
-      example: "John"
-      selector:
-        text:
 
 reset_budget:
   name: Reset Budget

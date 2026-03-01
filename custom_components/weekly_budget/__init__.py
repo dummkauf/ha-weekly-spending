@@ -48,7 +48,6 @@ ADD_EXPENSE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_AMOUNT): vol.Coerce(float),
         vol.Required(ATTR_DESCRIPTION): cv.string,
-        vol.Optional(ATTR_USER, default="Unknown"): cv.string,
     }
 )
 
@@ -189,6 +188,7 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     CARD_FILES = [
         "weekly-budget-card.js",
         "weekly-budget-expenses-card.js",
+        "weekly-budget-add-expense-card.js",
     ]
 
     # Use hass.config.path() for reliable absolute paths, just like browser_mod
@@ -231,12 +231,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register services (only once)
     if not hass.services.has_service(DOMAIN, SERVICE_ADD_EXPENSE):
         async def handle_add_expense(call: ServiceCall) -> None:
-            """Handle add_expense service call."""
+            """Handle add_expense service call.
+
+            Automatically resolves the HA username from the service call
+            context so users never need to type their name.
+            """
             amount = call.data[ATTR_AMOUNT]
             description = call.data[ATTR_DESCRIPTION]
-            user = call.data.get(ATTR_USER, "Unknown")
+
+            # Resolve the calling user's display name from HA auth
+            user_name = "Unknown"
+            if call.context.user_id:
+                try:
+                    user = await hass.auth.async_get_user(call.context.user_id)
+                    if user and user.name:
+                        user_name = user.name
+                except Exception:  # noqa: BLE001
+                    _LOGGER.debug("Could not resolve user name for %s", call.context.user_id)
+
             for data in hass.data[DOMAIN].values():
-                await data.async_add_expense(amount, description, user)
+                await data.async_add_expense(amount, description, user_name)
 
         async def handle_reset_budget(call: ServiceCall) -> None:
             """Handle reset_budget service call."""

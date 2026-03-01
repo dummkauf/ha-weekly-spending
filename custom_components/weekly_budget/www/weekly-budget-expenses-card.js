@@ -27,7 +27,17 @@ class WeeklyBudgetExpensesCard extends HTMLElement {
   }
 
   _render() {
-    if (!this._hass || !this._config) return;
+    if (!this._config) return;
+
+    if (!this._hass) {
+      this.shadowRoot.innerHTML = `
+        <ha-card>
+          <div style="padding: 24px; text-align: center; color: var(--secondary-text-color);">
+            Loading expenses...
+          </div>
+        </ha-card>`;
+      return;
+    }
 
     const entityId = this._config.entity;
     const state = this._hass.states[entityId];

@@ -37,7 +37,17 @@ class WeeklyBudgetCard extends HTMLElement {
   }
 
   _render() {
-    if (!this._hass || !this._config) return;
+    if (!this._config) return;
+
+    if (!this._hass) {
+      this.shadowRoot.innerHTML = `
+        <ha-card>
+          <div style="padding: 24px; text-align: center; color: var(--secondary-text-color);">
+            Loading budget...
+          </div>
+        </ha-card>`;
+      return;
+    }
 
     const entityId = this._config.entity;
     const state = this._hass.states[entityId];
@@ -295,9 +305,6 @@ class WeeklyBudgetCard extends HTMLElement {
             <input type="number" id="expense-amount" placeholder="Amount" step="0.01" min="0.01" />
             <input type="text" id="expense-desc" placeholder="Description" />
           </div>
-          <div class="form-row">
-            <input type="text" id="expense-user" placeholder="Your name (optional)" />
-          </div>
           <div class="btn-row">
             <button class="btn btn-add" id="btn-add">Add Expense</button>
             <button class="btn btn-reset" id="btn-reset">Reset</button>
@@ -316,7 +323,7 @@ class WeeklyBudgetCard extends HTMLElement {
     });
 
     // Allow Enter key on inputs
-    ["expense-amount", "expense-desc", "expense-user"].forEach((id) => {
+    ["expense-amount", "expense-desc"].forEach((id) => {
       this.shadowRoot.getElementById(id).addEventListener("keydown", (e) => {
         if (e.key === "Enter") this._addExpense();
       });
@@ -326,11 +333,9 @@ class WeeklyBudgetCard extends HTMLElement {
   _addExpense() {
     const amountEl = this.shadowRoot.getElementById("expense-amount");
     const descEl = this.shadowRoot.getElementById("expense-desc");
-    const userEl = this.shadowRoot.getElementById("expense-user");
 
     const amount = parseFloat(amountEl.value);
     const description = descEl.value.trim();
-    const user = userEl.value.trim() || "Unknown";
 
     if (!amount || amount <= 0) {
       amountEl.style.borderColor = "#ef4444";
@@ -346,12 +351,10 @@ class WeeklyBudgetCard extends HTMLElement {
     this._hass.callService("weekly_budget", "add_expense", {
       amount: amount,
       description: description,
-      user: user,
     });
 
     amountEl.value = "";
     descEl.value = "";
-    userEl.value = "";
   }
 
   _resetBudget() {
