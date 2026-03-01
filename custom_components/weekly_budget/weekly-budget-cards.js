@@ -257,7 +257,7 @@ class WeeklyBudgetExpensesCard extends HTMLElement {
       return;
     }
     var total = 0;
-    var h = '';
+    var h = '<div style="display:grid;grid-template-columns:auto auto 1fr;gap:2px 12px;align-items:baseline;font-size:14px;line-height:1.8">';
     for (var i = exps.length - 1; i >= 0; i--) {
       var e = exps[i];
       var ea = parseFloat(e.amount) || 0;
@@ -270,12 +270,11 @@ class WeeklyBudgetExpensesCard extends HTMLElement {
       var user = e.user || 'Unknown';
       var desc = e.description || '';
       h +=
-        '<div style="padding:4px 0;font-size:14px;line-height:1.6">' +
-          '<span style="color:#888">' + dateStr + '</span> ' +
-          '<span style="font-weight:600">' + cur + ea.toFixed(2) + '</span>' +
-          ' - ' + user + ': ' + desc +
-        '</div>';
+        '<div style="color:#888;white-space:nowrap">' + dateStr + '</div>' +
+        '<div style="font-weight:600;white-space:nowrap">' + cur + ea.toFixed(2) + '</div>' +
+        '<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + user + ': ' + desc + '</div>';
     }
+    h += '</div>';
     h += '<div style="margin-top:8px;padding-top:8px;border-top:2px solid #e5e7eb;display:flex;justify-content:space-between;font-weight:700">' +
       '<span>Total</span><span>' + cur + total.toFixed(2) + '</span></div>';
     listEl.innerHTML = h;
