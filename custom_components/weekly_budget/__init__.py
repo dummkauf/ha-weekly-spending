@@ -87,35 +87,39 @@ def _read_version() -> str:
 CARDS_JS = "weekly-budget-cards.js"
 
 
+def _copy_cards_to_www(hass_config_path: str) -> str:
+    """Copy the JS file to config/www/ so HA serves it at /local/.
+
+    Returns the destination path on disk.
+    """
+    import shutil
+
+    src = os.path.join(os.path.dirname(__file__), CARDS_JS)
+    www_dir = os.path.join(hass_config_path, "www")
+    os.makedirs(www_dir, exist_ok=True)
+    dst = os.path.join(www_dir, CARDS_JS)
+    shutil.copy2(src, dst)
+    _LOGGER.info("Weekly Budget: copied %s -> %s", src, dst)
+    return dst
+
+
 async def _register_cards(hass: HomeAssistant) -> None:
     """Register the Lovelace card JS with the HA frontend.
 
-    Follows browser_mod's exact pattern:
-      1. Single JS file in the component root directory
-      2. Serve it as a static path
-      3. add_extra_js_url so the frontend loads it automatically
+    Strategy: copy the JS file into config/www/ (which HA always serves
+    at /local/) and then call add_extra_js_url to load it automatically.
+    This bypasses async_register_static_paths entirely.
     """
     from homeassistant.components.frontend import add_extra_js_url
-    from homeassistant.components.http import StaticPathConfig
 
     version = await hass.async_add_executor_job(_read_version)
-    filepath = os.path.join(os.path.dirname(__file__), CARDS_JS)
 
-    _LOGGER.info("Weekly Budget: JS path = %s, exists = %s", filepath, os.path.isfile(filepath))
+    # Copy JS to config/www/ on the executor thread
+    await hass.async_add_executor_job(_copy_cards_to_www, hass.config.path())
 
-    if not os.path.isfile(filepath):
-        _LOGGER.error("Weekly Budget: JS file NOT found: %s", filepath)
-        return
-
-    url_path = f"/{DOMAIN}/{CARDS_JS}"
-    await hass.http.async_register_static_paths(
-        [StaticPathConfig(url_path, filepath, False)]
-    )
-    _LOGGER.info("Weekly Budget: static path registered: %s", url_path)
-
-    url_with_ver = f"{url_path}?v={version}"
-    add_extra_js_url(hass, url_with_ver)
-    _LOGGER.info("Weekly Budget: add_extra_js_url(%s)", url_with_ver)
+    url = f"/local/{CARDS_JS}?v={version}"
+    add_extra_js_url(hass, url)
+    _LOGGER.info("Weekly Budget: add_extra_js_url(%s)", url)
 
 
 # ── async_setup (runs before config entries, like browser_mod) ───────
