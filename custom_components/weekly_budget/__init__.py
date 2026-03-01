@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from datetime import datetime, timedelta
@@ -15,7 +16,6 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from homeassistant.components.http import StaticPathConfig
 
 from .const import (
     DOMAIN,
@@ -44,6 +44,9 @@ SIGNAL_BUDGET_UPDATED = f"{DOMAIN}_budget_updated"
 
 PLATFORMS = ["sensor"]
 
+# Allow empty YAML config block so async_setup is called
+CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
+
 ADD_EXPENSE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_AMOUNT): vol.Coerce(float),
@@ -58,6 +61,9 @@ SET_LIMIT_SCHEMA = vol.Schema(
 )
 
 
+# ── Helpers ──────────────────────────────────────────────────────────
+
+
 def _monday_of_week(dt: datetime | None = None) -> str:
     """Return the Monday of the current week as an ISO date string."""
     if dt is None:
@@ -66,11 +72,91 @@ def _monday_of_week(dt: datetime | None = None) -> str:
     return monday.strftime("%Y-%m-%d")
 
 
+def _read_version() -> str:
+    """Read the integration version from manifest.json (sync, for executor)."""
+    manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
+    try:
+        with open(manifest_path, "r") as fp:
+            return json.load(fp).get("version", "0.0.0")
+    except Exception:
+        return "0.0.0"
+
+
+# ── Frontend registration ────────────────────────────────────────────
+
+CARD_FILES = [
+    "weekly-budget-card.js",
+    "weekly-budget-expenses-card.js",
+    "weekly-budget-add-expense-card.js",
+]
+
+
+async def _register_cards(hass: HomeAssistant) -> None:
+    """Register the Lovelace card JS files with the HA frontend.
+
+    This follows the exact pattern used by browser_mod:
+      1. Read version from manifest.json
+      2. Register each JS file as a static HTTP path
+      3. Call add_extra_js_url so the frontend loads them automatically
+    """
+    from homeassistant.components.frontend import add_extra_js_url
+    from homeassistant.components.http import StaticPathConfig
+
+    version = await hass.async_add_executor_job(_read_version)
+    component_dir = os.path.dirname(__file__)
+    www_dir = os.path.join(component_dir, "www")
+
+    _LOGGER.info("Weekly Budget: registering %d card files from %s", len(CARD_FILES), www_dir)
+
+    # Step 1: Serve each JS file at /weekly_budget/<filename>
+    static_paths = []
+    for filename in CARD_FILES:
+        filepath = os.path.join(www_dir, filename)
+        if not os.path.isfile(filepath):
+            _LOGGER.error("Weekly Budget: JS file NOT found on disk: %s", filepath)
+            continue
+        static_paths.append(
+            StaticPathConfig(f"/weekly_budget/{filename}", filepath, True)
+        )
+        _LOGGER.info("Weekly Budget: serving %s -> /weekly_budget/%s", filepath, filename)
+
+    if static_paths:
+        await hass.http.async_register_static_paths(static_paths)
+
+    # Step 2: Tell frontend to load them as <script type="module"> on every page
+    for filename in CARD_FILES:
+        url = f"/weekly_budget/{filename}?v={version}"
+        add_extra_js_url(hass, url)
+        _LOGGER.info("Weekly Budget: add_extra_js_url(%s)", url)
+
+
+# ── async_setup (runs before config entries, like browser_mod) ───────
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Set up the Weekly Budget integration (YAML phase).
+
+    This registers the frontend card files early, before any config
+    entry is loaded, ensuring the cards are always available.
+    """
+    hass.data.setdefault(DOMAIN, {})
+
+    try:
+        await _register_cards(hass)
+        _LOGGER.info("Weekly Budget: frontend cards registered successfully")
+    except Exception:
+        _LOGGER.exception("Weekly Budget: failed to register frontend cards")
+
+    return True
+
+
+# ── Budget data manager ──────────────────────────────────────────────
+
+
 class BudgetData:
     """Manage weekly budget data with persistence."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        """Initialize the budget data manager."""
         self.hass = hass
         self.entry = entry
         self._store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY}_{entry.entry_id}")
@@ -81,7 +167,6 @@ class BudgetData:
         self.week_start: str = _monday_of_week()
 
     async def async_load(self) -> None:
-        """Load data from storage."""
         data = await self._store.async_load()
         if data:
             self.weekly_limit = data.get(ATTR_WEEKLY_LIMIT, self.weekly_limit)
@@ -89,18 +174,14 @@ class BudgetData:
             self.expenses = data.get(ATTR_EXPENSES, [])
             self.week_start = data.get(ATTR_WEEK_START, _monday_of_week())
             self.currency = data.get("currency", self.currency)
-
-        # Check if we need to roll over to a new week
         self._check_week_rollover()
 
     def _check_week_rollover(self) -> None:
-        """Check if a new week has started and handle rollover."""
         current_monday = _monday_of_week()
         if self.week_start != current_monday:
             spent = self.total_spent
             effective_budget = self.weekly_limit + self.rollover
             remaining = effective_budget - spent
-            # remaining becomes next week's rollover
             self.rollover = remaining
             self.expenses = []
             self.week_start = current_monday
@@ -112,21 +193,17 @@ class BudgetData:
 
     @property
     def total_spent(self) -> float:
-        """Calculate total amount spent this week."""
         return round(sum(e.get(ATTR_AMOUNT, 0) for e in self.expenses), 2)
 
     @property
     def effective_budget(self) -> float:
-        """The weekly limit plus any rollover (positive or negative)."""
         return round(self.weekly_limit + self.rollover, 2)
 
     @property
     def remaining(self) -> float:
-        """Calculate how much budget remains."""
         return round(self.effective_budget - self.total_spent, 2)
 
     async def async_save(self) -> None:
-        """Persist data to storage."""
         await self._store.async_save(
             {
                 ATTR_WEEKLY_LIMIT: self.weekly_limit,
@@ -140,7 +217,6 @@ class BudgetData:
     async def async_add_expense(
         self, amount: float, description: str, user: str = "Unknown"
     ) -> None:
-        """Add a new expense."""
         self._check_week_rollover()
         expense = {
             ATTR_AMOUNT: round(amount, 2),
@@ -153,7 +229,6 @@ class BudgetData:
         async_dispatcher_send(self.hass, SIGNAL_BUDGET_UPDATED)
 
     async def async_reset_budget(self) -> None:
-        """Reset budget: clear expenses, zero out rollover, restart the week."""
         self.rollover = 0.0
         self.expenses = []
         self.week_start = _monday_of_week()
@@ -161,9 +236,7 @@ class BudgetData:
         async_dispatcher_send(self.hass, SIGNAL_BUDGET_UPDATED)
 
     async def async_set_weekly_limit(self, amount: float) -> None:
-        """Update the weekly spending limit."""
         self.weekly_limit = round(amount, 2)
-        # Also update the config entry for persistence across restarts
         self.hass.config_entries.async_update_entry(
             self.entry,
             data={**self.entry.data, CONF_WEEKLY_LIMIT: self.weekly_limit},
@@ -172,56 +245,11 @@ class BudgetData:
         async_dispatcher_send(self.hass, SIGNAL_BUDGET_UPDATED)
 
 
-async def _async_register_frontend(hass: HomeAssistant) -> None:
-    """Serve card JS files and inject them into the HA frontend.
-
-    Follows the same pattern used by browser_mod and other proven HACS
-    integrations:
-      1. Register static paths so the HA HTTP server can serve the JS files.
-      2. Call add_extra_js_url with a cache-busting query string so the
-         frontend injects <script type="module"> tags on every page load.
-      3. The cards' window.customCards.push() calls then register them in
-         the Lovelace card picker automatically.
-    """
-    from homeassistant.components.frontend import add_extra_js_url
-
-    CARD_FILES = [
-        "weekly-budget-card.js",
-        "weekly-budget-expenses-card.js",
-        "weekly-budget-add-expense-card.js",
-    ]
-
-    # Use hass.config.path() for reliable absolute paths, just like browser_mod
-    www_dir = hass.config.path(f"custom_components/{DOMAIN}/www")
-
-    # 1. Serve the JS files at /weekly_budget/<filename>
-    await hass.http.async_register_static_paths(
-        [
-            StaticPathConfig(
-                url_path=f"/{DOMAIN}/{filename}",
-                path=os.path.join(www_dir, filename),
-                cache_headers=False,
-            )
-            for filename in CARD_FILES
-        ]
-    )
-
-    # 2. Tell the frontend to load them as ES modules on every page.
-    #    The cache-busting query param ensures browsers fetch the latest
-    #    version after updates (same technique used by browser_mod).
-    cache_buster = "3.0.0"
-    for filename in CARD_FILES:
-        add_extra_js_url(hass, f"/{DOMAIN}/{filename}?v={cache_buster}")
+# ── Config entry setup ───────────────────────────────────────────────
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Weekly Budget from a config entry."""
-
-    # ── Register frontend card resources (once) ──────────────────────
-    if f"{DOMAIN}_frontend_registered" not in hass.data:
-        hass.data[f"{DOMAIN}_frontend_registered"] = True
-        await _async_register_frontend(hass)
-
     budget_data = BudgetData(hass, entry)
     await budget_data.async_load()
 
@@ -231,37 +259,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register services (only once)
     if not hass.services.has_service(DOMAIN, SERVICE_ADD_EXPENSE):
         async def handle_add_expense(call: ServiceCall) -> None:
-            """Handle add_expense service call.
-
-            Automatically resolves the HA username from the service call
-            context so users never need to type their name.
-            """
             amount = call.data[ATTR_AMOUNT]
             description = call.data[ATTR_DESCRIPTION]
 
-            # Resolve the calling user's display name from HA auth
             user_name = "Unknown"
             if call.context.user_id:
                 try:
                     user = await hass.auth.async_get_user(call.context.user_id)
                     if user and user.name:
                         user_name = user.name
-                except Exception:  # noqa: BLE001
+                except Exception:
                     _LOGGER.debug("Could not resolve user name for %s", call.context.user_id)
 
             for data in hass.data[DOMAIN].values():
-                await data.async_add_expense(amount, description, user_name)
+                if isinstance(data, BudgetData):
+                    await data.async_add_expense(amount, description, user_name)
 
         async def handle_reset_budget(call: ServiceCall) -> None:
-            """Handle reset_budget service call."""
             for data in hass.data[DOMAIN].values():
-                await data.async_reset_budget()
+                if isinstance(data, BudgetData):
+                    await data.async_reset_budget()
 
         async def handle_set_weekly_limit(call: ServiceCall) -> None:
-            """Handle set_weekly_limit service call."""
             amount = call.data[ATTR_AMOUNT]
             for data in hass.data[DOMAIN].values():
-                await data.async_set_weekly_limit(amount)
+                if isinstance(data, BudgetData):
+                    await data.async_set_weekly_limit(amount)
 
         hass.services.async_register(
             DOMAIN, SERVICE_ADD_EXPENSE, handle_add_expense, schema=ADD_EXPENSE_SCHEMA
@@ -276,11 +299,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Schedule a check at midnight every day for week rollover
     @callback
     def _midnight_check(_now: datetime) -> None:
-        """Check for week rollover at midnight."""
         for data in hass.data.get(DOMAIN, {}).values():
-            data._check_week_rollover()
-            hass.async_create_task(data.async_save())
-            async_dispatcher_send(hass, SIGNAL_BUDGET_UPDATED)
+            if isinstance(data, BudgetData):
+                data._check_week_rollover()
+                hass.async_create_task(data.async_save())
+                async_dispatcher_send(hass, SIGNAL_BUDGET_UPDATED)
 
     entry.async_on_unload(
         async_track_time_change(hass, _midnight_check, hour=0, minute=0, second=5)
@@ -295,8 +318,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)
-        # Remove services if no entries remain
-        if not hass.data[DOMAIN]:
+        has_entries = any(
+            isinstance(v, BudgetData) for v in hass.data.get(DOMAIN, {}).values()
+        )
+        if not has_entries:
             hass.services.async_remove(DOMAIN, SERVICE_ADD_EXPENSE)
             hass.services.async_remove(DOMAIN, SERVICE_RESET_BUDGET)
             hass.services.async_remove(DOMAIN, SERVICE_SET_WEEKLY_LIMIT)
