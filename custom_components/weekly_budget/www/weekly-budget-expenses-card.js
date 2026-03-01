@@ -14,9 +14,6 @@ class WeeklyBudgetExpensesCard extends HTMLElement {
   }
 
   setConfig(config) {
-    if (!config.entity) {
-      throw new Error("Please define an entity (sensor.weekly_budget_remaining or sensor.weekly_budget_spent)");
-    }
     this._config = config;
     this._render();
   }
@@ -309,11 +306,12 @@ class WeeklyBudgetExpensesCard extends HTMLElement {
   }
 
   static getStubConfig(hass) {
-    const entities = Object.keys(hass.states).filter((eid) =>
-      eid.startsWith("sensor.weekly_budget_remaining")
+    const entities = Object.keys(hass.states).filter(
+      (eid) => eid.includes("weekly_budget") || eid.includes("budget_remaining")
     );
+    const remaining = entities.find((e) => e.includes("remaining"));
     return {
-      entity: entities[0] || "sensor.weekly_budget_remaining",
+      entity: remaining || entities[0] || "",
       title: "Expenses This Week",
       max_items: 50,
       show_total: true,
@@ -471,5 +469,6 @@ window.customCards.push({
   type: "weekly-budget-expenses-card",
   name: "Weekly Budget Expenses",
   description: "Displays the list of expenses for the current week with user, description, and amount.",
-  preview: true,
+  preview: false,
+  documentationURL: "https://github.com/weekly-budget-tracker",
 });

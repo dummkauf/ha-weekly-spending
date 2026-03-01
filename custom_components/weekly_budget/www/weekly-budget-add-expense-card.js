@@ -15,11 +15,6 @@ class WeeklyBudgetAddExpenseCard extends HTMLElement {
   }
 
   setConfig(config) {
-    if (!config.entity) {
-      throw new Error(
-        "Please define an entity (sensor.weekly_budget_remaining)"
-      );
-    }
     this._config = config;
     this._render();
   }
@@ -264,10 +259,11 @@ class WeeklyBudgetAddExpenseCard extends HTMLElement {
   }
 
   static getStubConfig(hass) {
-    const entities = Object.keys(hass.states).filter((eid) =>
-      eid.startsWith("sensor.weekly_budget_remaining")
+    const entities = Object.keys(hass.states).filter(
+      (eid) => eid.includes("weekly_budget") || eid.includes("budget_remaining")
     );
-    return { entity: entities[0] || "sensor.weekly_budget_remaining" };
+    const remaining = entities.find((e) => e.includes("remaining"));
+    return { entity: remaining || entities[0] || "" };
   }
 }
 
@@ -389,5 +385,6 @@ window.customCards.push({
   name: "Weekly Budget Add Expense",
   description:
     "A standalone form for adding expenses to the weekly budget. Automatically uses the logged-in HA username.",
-  preview: true,
+  preview: false,
+  documentationURL: "https://github.com/weekly-budget-tracker",
 });
