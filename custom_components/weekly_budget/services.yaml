@@ -1,0 +1,49 @@
+add_expense:
+  name: Add Expense
+  description: Add a new expense to the weekly budget.
+  fields:
+    amount:
+      name: Amount
+      description: The expense amount.
+      required: true
+      example: 25.50
+      selector:
+        number:
+          min: 0.01
+          max: 100000
+          step: 0.01
+          mode: box
+    description:
+      name: Description
+      description: A short description of the expense.
+      required: true
+      example: "Groceries"
+      selector:
+        text:
+    user:
+      name: User
+      description: Name of the person who made the expense (optional, defaults to "Unknown").
+      required: false
+      example: "John"
+      selector:
+        text:
+
+reset_budget:
+  name: Reset Budget
+  description: Reset the weekly budget back to the configured weekly limit, clearing all expenses and rollover.
+
+set_weekly_limit:
+  name: Set Weekly Limit
+  description: Update the weekly spending limit.
+  fields:
+    amount:
+      name: Amount
+      description: The new weekly spending limit.
+      required: true
+      example: 200.00
+      selector:
+        number:
+          min: 1
+          max: 100000
+          step: 0.01
+          mode: box

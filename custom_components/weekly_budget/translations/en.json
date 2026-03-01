@@ -1,0 +1,17 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set Up Weekly Budget",
+        "description": "Configure your weekly spending budget. Unspent money rolls over to the next week, and overspending is automatically deducted.",
+        "data": {
+          "weekly_limit": "Weekly Spending Limit",
+          "currency": "Currency Symbol"
+        }
+      }
+    },
+    "error": {
+      "invalid_limit": "The weekly limit must be greater than zero."
+    }
+  }
+}
