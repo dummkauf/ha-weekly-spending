@@ -1,5 +1,65 @@
 /* Weekly Budget Tracker - Lovelace Cards */
 
+/* ── Shared Editor ──────────────────────────────────────────── */
+
+class WbEntityEditor extends HTMLElement {
+  constructor() {
+    super();
+    this._config = {};
+    this._hass = null;
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    var picker = this.querySelector('ha-entity-picker');
+    if (picker) picker.hass = hass;
+  }
+
+  setConfig(config) {
+    this._config = Object.assign({}, config);
+    this._render();
+  }
+
+  _render() {
+    this.innerHTML =
+      '<div style="padding:16px 0">' +
+        '<ha-entity-picker allow-custom-entity></ha-entity-picker>' +
+        '<p style="margin:8px 0 0;font-size:12px;color:var(--secondary-text-color)">' +
+          'Select a weekly_budget sensor (e.g. Budget Remaining)' +
+        '</p>' +
+      '</div>';
+
+    var picker = this.querySelector('ha-entity-picker');
+    if (!picker) return;
+    if (this._hass) picker.hass = this._hass;
+    picker.value = this._config.entity || '';
+    picker.includeDomains = ['sensor'];
+    picker.entityFilter = function(stateObj) {
+      return stateObj.entity_id.indexOf('weekly_budget') !== -1 ||
+             stateObj.entity_id.indexOf('budget_remaining') !== -1 ||
+             stateObj.entity_id.indexOf('budget_spent') !== -1 ||
+             stateObj.entity_id.indexOf('budget_rollover') !== -1 ||
+             stateObj.entity_id.indexOf('weekly_limit') !== -1;
+    };
+
+    var self = this;
+    picker.addEventListener('value-changed', function(ev) {
+      if (!ev.detail || ev.detail.value === self._config.entity) return;
+      self._config = Object.assign({}, self._config, { entity: ev.detail.value });
+      self.dispatchEvent(new CustomEvent('config-changed', {
+        detail: { config: self._config },
+        bubbles: true,
+        composed: true
+      }));
+    });
+  }
+}
+
+if (!customElements.get('wb-entity-editor')) {
+  customElements.define('wb-entity-editor', WbEntityEditor);
+}
+
+
 /* ── Overview Card ──────────────────────────────────────────── */
 
 class WeeklyBudgetCard extends HTMLElement {
@@ -8,6 +68,26 @@ class WeeklyBudgetCard extends HTMLElement {
     this._hass = null;
     this._config = {};
     this._built = false;
+  }
+
+  static getConfigElement() {
+    return document.createElement('wb-entity-editor');
+  }
+
+  static getStubConfig(hass) {
+    var match = '';
+    if (hass && hass.states) {
+      var keys = Object.keys(hass.states);
+      for (var i = 0; i < keys.length; i++) {
+        if (keys[i].indexOf('budget_remaining') !== -1) { match = keys[i]; break; }
+      }
+      if (!match) {
+        for (var j = 0; j < keys.length; j++) {
+          if (keys[j].indexOf('weekly_budget') !== -1) { match = keys[j]; break; }
+        }
+      }
+    }
+    return { entity: match };
   }
 
   setConfig(config) {
@@ -31,7 +111,7 @@ class WeeklyBudgetCard extends HTMLElement {
           '<div style="background:#e5e7eb;border-radius:8px;height:12px;margin-bottom:16px;overflow:hidden">' +
             '<div id="wb-bar" style="height:100%;width:0%;border-radius:8px;transition:width 0.3s"></div>' +
           '</div>' +
-          '<div id="wb-info" style="color:#888;text-align:center">Configure entity in card settings</div>' +
+          '<div id="wb-info" style="color:#888;text-align:center">Select an entity in card settings</div>' +
           '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px" id="wb-stats"></div>' +
           '<div style="display:flex;gap:8px;margin-bottom:8px">' +
             '<input type="number" id="wb-amt" placeholder="Amount" step="0.01" min="0.01" style="flex:1;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:14px"/>' +
@@ -114,7 +194,6 @@ class WeeklyBudgetCard extends HTMLElement {
   }
 
   getCardSize() { return 5; }
-  static getStubConfig() { return { entity: '' }; }
 }
 
 
@@ -126,6 +205,14 @@ class WeeklyBudgetExpensesCard extends HTMLElement {
     this._hass = null;
     this._config = {};
     this._built = false;
+  }
+
+  static getConfigElement() {
+    return document.createElement('wb-entity-editor');
+  }
+
+  static getStubConfig(hass) {
+    return WeeklyBudgetCard.getStubConfig(hass);
   }
 
   setConfig(config) {
@@ -146,7 +233,7 @@ class WeeklyBudgetExpensesCard extends HTMLElement {
       '<ha-card>' +
         '<div style="padding:20px">' +
           '<div style="font-size:18px;font-weight:700;margin-bottom:16px" id="wbe-title">Expenses This Week</div>' +
-          '<div id="wbe-list" style="color:#888;text-align:center">Configure entity in card settings</div>' +
+          '<div id="wbe-list" style="color:#888;text-align:center">Select an entity in card settings</div>' +
         '</div>' +
       '</ha-card>';
   }
@@ -191,7 +278,6 @@ class WeeklyBudgetExpensesCard extends HTMLElement {
   }
 
   getCardSize() { return 5; }
-  static getStubConfig() { return { entity: '' }; }
 }
 
 
@@ -203,6 +289,14 @@ class WeeklyBudgetAddExpenseCard extends HTMLElement {
     this._hass = null;
     this._config = {};
     this._built = false;
+  }
+
+  static getConfigElement() {
+    return document.createElement('wb-entity-editor');
+  }
+
+  static getStubConfig(hass) {
+    return WeeklyBudgetCard.getStubConfig(hass);
   }
 
   setConfig(config) {
@@ -246,7 +340,6 @@ class WeeklyBudgetAddExpenseCard extends HTMLElement {
   }
 
   getCardSize() { return 3; }
-  static getStubConfig() { return { entity: '' }; }
 }
 
 
@@ -258,7 +351,6 @@ if (!customElements.get('weekly-budget-add-expense-card')) customElements.define
 
 window.customCards = window.customCards || [];
 
-/* Prevent duplicate entries if the file loads twice */
 var _wbTypes = window.customCards.map(function(c) { return c.type; });
 if (_wbTypes.indexOf('weekly-budget-card') === -1) {
   window.customCards.push({ type: 'weekly-budget-card', name: 'Weekly Budget Overview', description: 'Budget progress, stats, and expense entry form.' });
