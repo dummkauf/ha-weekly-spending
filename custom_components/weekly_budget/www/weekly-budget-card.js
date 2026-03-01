@@ -1,310 +1,187 @@
 /**
  * Weekly Budget Overview Card
  *
- * A Lovelace card that displays the current weekly budget status:
- * - Spent vs Remaining with a progress ring
- * - Effective budget (limit + rollover)
- * - Quick-add expense form
- * - Reset button
+ * Displays the current weekly budget status: spent vs remaining with a
+ * progress ring, stats, and a quick-add expense form.
  */
+(function () {
+  "use strict";
 
-class WeeklyBudgetCard extends HTMLElement {
-  constructor() {
-    super();
-    this.attachShadow({ mode: "open" });
-    this._config = {};
-    this._hass = null;
-    this._rendered = false;
-  }
-
-  setConfig(config) {
-    this._config = config;
-    this._buildLayout();
-  }
-
-  set hass(hass) {
-    this._hass = hass;
-    if (!this._rendered) {
-      this._buildLayout();
-    }
-    this._update();
-  }
-
-  /* ── Build the static HTML shell once ──────────────────────────── */
-
-  _buildLayout() {
-    this._rendered = true;
-
-    this.shadowRoot.innerHTML = `
-      <style>
-        :host { display: block; }
-        ha-card { padding: 20px; overflow: hidden; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-        .title { font-size: 18px; font-weight: 600; color: var(--primary-text-color); }
-        .subtitle { font-size: 12px; color: var(--secondary-text-color); margin-top: 2px; }
-        .badge { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 20px; }
-        .ring-container { display: flex; justify-content: center; align-items: center; margin: 8px 0 20px; position: relative; }
-        .ring-svg { transform: rotate(-90deg); width: 140px; height: 140px; }
-        .ring-bg { fill: none; stroke: var(--divider-color, #e5e7eb); stroke-width: 10; }
-        .ring-fill { fill: none; stroke: #22c55e; stroke-width: 10; stroke-linecap: round; transition: stroke-dashoffset 0.6s ease, stroke 0.3s; }
-        .ring-text { position: absolute; text-align: center; }
-        .ring-text .amount { font-size: 22px; font-weight: 700; line-height: 1.1; }
-        .ring-text .label { font-size: 11px; color: var(--secondary-text-color); margin-top: 2px; }
-        .stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 20px; }
-        .stat-box { text-align: center; padding: 10px 6px; border-radius: 10px; background: var(--card-background-color, rgba(0,0,0,0.03)); border: 1px solid var(--divider-color, #e5e7eb); }
-        .stat-value { font-size: 16px; font-weight: 700; color: var(--primary-text-color); }
-        .stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--secondary-text-color); margin-top: 4px; }
-        .form-section { border-top: 1px solid var(--divider-color, #e5e7eb); padding-top: 16px; margin-top: 4px; }
-        .form-title { font-size: 13px; font-weight: 600; color: var(--primary-text-color); margin-bottom: 10px; }
-        .form-row { display: flex; gap: 8px; margin-bottom: 8px; }
-        .form-row input { flex: 1; padding: 8px 12px; border: 1px solid var(--divider-color, #e5e7eb); border-radius: 8px; font-size: 13px; background: var(--card-background-color, #fff); color: var(--primary-text-color); outline: none; transition: border-color 0.2s; }
-        .form-row input:focus { border-color: var(--primary-color, #03a9f4); }
-        .form-row input::placeholder { color: var(--secondary-text-color); opacity: 0.6; }
-        .btn-row { display: flex; gap: 8px; }
-        .btn { flex: 1; padding: 9px 12px; border-radius: 8px; font-size: 13px; font-weight: 600; border: none; cursor: pointer; transition: opacity 0.2s, transform 0.1s; }
-        .btn:active { transform: scale(0.97); }
-        .btn-add { background: var(--primary-color, #03a9f4); color: #fff; }
-        .btn-add:hover { opacity: 0.9; }
-        .btn-reset { background: transparent; border: 1px solid var(--divider-color, #e5e7eb); color: var(--secondary-text-color); flex: 0.5; }
-        .btn-reset:hover { background: rgba(239,68,68,0.08); color: #ef4444; border-color: #ef4444; }
-        .rollover-note { font-size: 11px; color: var(--secondary-text-color); text-align: center; margin-top: 8px; font-style: italic; }
-        .msg-row { text-align: center; padding: 16px; color: var(--secondary-text-color); font-size: 14px; }
-      </style>
-
-      <ha-card>
-        <div id="content">
-          <div class="msg-row" id="msg">Loading budget...</div>
-        </div>
-      </ha-card>
-    `;
-  }
-
-  /* ── Lightweight DOM update on every hass change ────────────────── */
-
-  _update() {
-    if (!this._hass || !this._config) return;
-
-    const content = this.shadowRoot.getElementById("content");
-    if (!content) return;
-
-    const entityId = this._config.entity;
-    if (!entityId) {
-      content.innerHTML = '<div class="msg-row">No entity configured.</div>';
-      return;
+  class WeeklyBudgetCard extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" });
+      this._config = {};
+      this._hass = null;
     }
 
-    const state = this._hass.states[entityId];
-    if (!state) {
-      content.innerHTML = '<div class="msg-row">Entity not found: ' + entityId + '</div>';
-      return;
+    setConfig(config) {
+      this._config = config || {};
+      this._buildShell();
     }
 
-    const remaining = parseFloat(state.state) || 0;
-    const attrs = state.attributes || {};
-    const spent = parseFloat(attrs.spent) || 0;
-    const weeklyLimit = parseFloat(attrs.weekly_limit) || 0;
-    const rollover = parseFloat(attrs.rollover) || 0;
-    const effectiveBudget = parseFloat(attrs.effective_budget) || weeklyLimit;
-    const currency = attrs.currency || "$";
-
-    const spentPercent = effectiveBudget > 0
-      ? Math.min((spent / effectiveBudget) * 100, 100)
-      : (spent > 0 ? 100 : 0);
-
-    const isOverBudget = remaining < 0;
-    const ringColor = isOverBudget ? "#ef4444" : (spentPercent > 75 ? "#f59e0b" : "#22c55e");
-    const remainingColor = isOverBudget ? "#ef4444" : "#22c55e";
-
-    const radius = 54;
-    const circumference = 2 * Math.PI * radius;
-    const offset = circumference - (spentPercent / 100) * circumference;
-
-    const weekStartLabel = this._formatWeekStart(attrs.week_start);
-
-    let rolloverNote = "";
-    if (rollover > 0) {
-      rolloverNote = currency + rollover.toFixed(2) + " saved from last week";
-    } else if (rollover < 0) {
-      rolloverNote = currency + Math.abs(rollover).toFixed(2) + " overspent last week";
+    set hass(hass) {
+      this._hass = hass;
+      this._updateContent();
     }
 
-    content.innerHTML = `
-      <div class="header">
-        <div>
-          <div class="title">Weekly Budget</div>
-          <div class="subtitle">Week of ${weekStartLabel}</div>
-        </div>
-        <div class="badge" style="background:${isOverBudget ? "rgba(239,68,68,0.15)" : "rgba(34,197,94,0.15)"};color:${isOverBudget ? "#ef4444" : "#22c55e"}">
-          ${isOverBudget ? "Over Budget" : "On Track"}
-        </div>
-      </div>
-
-      <div class="ring-container">
-        <svg class="ring-svg" viewBox="0 0 128 128">
-          <circle class="ring-bg" cx="64" cy="64" r="${radius}" />
-          <circle class="ring-fill" cx="64" cy="64" r="${radius}"
-            style="stroke:${ringColor};stroke-dasharray:${circumference};stroke-dashoffset:${offset}" />
-        </svg>
-        <div class="ring-text">
-          <div class="amount" style="color:${remainingColor}">${currency}${Math.abs(remaining).toFixed(2)}</div>
-          <div class="label">${isOverBudget ? "over budget" : "remaining"}</div>
-        </div>
-      </div>
-
-      <div class="stats">
-        <div class="stat-box">
-          <div class="stat-value">${currency}${spent.toFixed(2)}</div>
-          <div class="stat-label">Spent</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-value">${currency}${effectiveBudget.toFixed(2)}</div>
-          <div class="stat-label">Budget</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-value" style="color:${rollover >= 0 ? "#22c55e" : "#ef4444"}">${rollover >= 0 ? "+" : ""}${currency}${rollover.toFixed(2)}</div>
-          <div class="stat-label">Rollover</div>
-        </div>
-      </div>
-
-      <div class="form-section">
-        <div class="form-title">Add Expense</div>
-        <div class="form-row">
-          <input type="number" id="expense-amount" placeholder="Amount" step="0.01" min="0.01" />
-          <input type="text" id="expense-desc" placeholder="Description" />
-        </div>
-        <div class="btn-row">
-          <button class="btn btn-add" id="btn-add">Add Expense</button>
-          <button class="btn btn-reset" id="btn-reset">Reset</button>
-        </div>
-        ${rolloverNote ? '<div class="rollover-note">' + rolloverNote + '</div>' : ""}
-      </div>
-    `;
-
-    // Wire up buttons
-    this.shadowRoot.getElementById("btn-add").addEventListener("click", () => this._addExpense());
-    this.shadowRoot.getElementById("btn-reset").addEventListener("click", () => this._resetBudget());
-    ["expense-amount", "expense-desc"].forEach((id) => {
-      const el = this.shadowRoot.getElementById(id);
-      if (el) el.addEventListener("keydown", (e) => { if (e.key === "Enter") this._addExpense(); });
-    });
-  }
-
-  _addExpense() {
-    const amountEl = this.shadowRoot.getElementById("expense-amount");
-    const descEl = this.shadowRoot.getElementById("expense-desc");
-    if (!amountEl || !descEl) return;
-
-    const amount = parseFloat(amountEl.value);
-    const description = descEl.value.trim();
-
-    if (!amount || amount <= 0) {
-      amountEl.style.borderColor = "#ef4444";
-      setTimeout(() => { amountEl.style.borderColor = ""; }, 1500);
-      return;
-    }
-    if (!description) {
-      descEl.style.borderColor = "#ef4444";
-      setTimeout(() => { descEl.style.borderColor = ""; }, 1500);
-      return;
+    getCardSize() {
+      return 5;
     }
 
-    this._hass.callService("weekly_budget", "add_expense", {
-      amount: amount,
-      description: description,
-    });
+    static getStubConfig() {
+      return { entity: "" };
+    }
 
-    amountEl.value = "";
-    descEl.value = "";
-  }
+    /* ── Build the outer card shell once ──────────────────────────── */
 
-  _resetBudget() {
-    if (confirm("Reset the budget? This clears all expenses and rollover.")) {
+    _buildShell() {
+      this.shadowRoot.innerHTML = `
+        <style>
+          :host { display: block; }
+          ha-card { overflow: hidden; }
+          .card-content { padding: 20px; }
+          .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+          .title { font-size: 18px; font-weight: 600; color: var(--primary-text-color); }
+          .subtitle { font-size: 12px; color: var(--secondary-text-color); margin-top: 2px; }
+          .badge { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 20px; }
+          .ring-wrap { display: flex; justify-content: center; align-items: center; margin: 8px 0 20px; position: relative; }
+          .ring-svg { transform: rotate(-90deg); width: 140px; height: 140px; }
+          .ring-bg { fill: none; stroke: var(--divider-color, #e5e7eb); stroke-width: 10; }
+          .ring-fill { fill: none; stroke-width: 10; stroke-linecap: round; transition: stroke-dashoffset 0.6s ease, stroke 0.3s; }
+          .ring-center { position: absolute; text-align: center; }
+          .ring-amount { font-size: 22px; font-weight: 700; line-height: 1.1; }
+          .ring-label { font-size: 11px; color: var(--secondary-text-color); margin-top: 2px; }
+          .stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+          .stat { text-align: center; padding: 10px 6px; border-radius: 10px; background: var(--card-background-color, rgba(0,0,0,0.03)); border: 1px solid var(--divider-color, #e5e7eb); }
+          .stat-val { font-size: 16px; font-weight: 700; color: var(--primary-text-color); }
+          .stat-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--secondary-text-color); margin-top: 4px; }
+          .form-section { border-top: 1px solid var(--divider-color, #e5e7eb); padding-top: 16px; margin-top: 4px; }
+          .form-title { font-size: 13px; font-weight: 600; color: var(--primary-text-color); margin-bottom: 10px; }
+          .form-row { display: flex; gap: 8px; margin-bottom: 8px; }
+          .form-row input { flex: 1; padding: 8px 12px; border: 1px solid var(--divider-color, #e5e7eb); border-radius: 8px; font-size: 13px; background: var(--card-background-color, #fff); color: var(--primary-text-color); outline: none; transition: border-color 0.2s; box-sizing: border-box; }
+          .form-row input:focus { border-color: var(--primary-color, #03a9f4); }
+          .form-row input::placeholder { color: var(--secondary-text-color); opacity: 0.6; }
+          .btn-row { display: flex; gap: 8px; }
+          .btn { flex: 1; padding: 9px 12px; border-radius: 8px; font-size: 13px; font-weight: 600; border: none; cursor: pointer; transition: opacity 0.2s, transform 0.1s; }
+          .btn:active { transform: scale(0.97); }
+          .btn-add { background: var(--primary-color, #03a9f4); color: #fff; }
+          .btn-add:hover { opacity: 0.9; }
+          .btn-reset { background: transparent; border: 1px solid var(--divider-color, #e5e7eb); color: var(--secondary-text-color); flex: 0.5; }
+          .btn-reset:hover { background: rgba(239,68,68,0.08); color: #ef4444; border-color: #ef4444; }
+          .rollover-note { font-size: 11px; color: var(--secondary-text-color); text-align: center; margin-top: 8px; font-style: italic; }
+          .info-msg { text-align: center; padding: 24px 16px; color: var(--secondary-text-color); font-size: 14px; }
+        </style>
+        <ha-card>
+          <div class="card-content" id="root">
+            <div class="info-msg">Waiting for data...</div>
+          </div>
+        </ha-card>
+      `;
+    }
+
+    /* ── Update inner content on each hass change ─────────────────── */
+
+    _updateContent() {
+      var root = this.shadowRoot.getElementById("root");
+      if (!root) return;
+      if (!this._hass) { root.innerHTML = '<div class="info-msg">Loading...</div>'; return; }
+
+      var entityId = this._config.entity;
+      if (!entityId) { root.innerHTML = '<div class="info-msg">No entity configured. Edit this card to select an entity.</div>'; return; }
+
+      var stateObj = this._hass.states[entityId];
+      if (!stateObj) { root.innerHTML = '<div class="info-msg">Entity not found: ' + entityId + '</div>'; return; }
+
+      var remaining = parseFloat(stateObj.state) || 0;
+      var a = stateObj.attributes || {};
+      var spent = parseFloat(a.spent) || 0;
+      var weeklyLimit = parseFloat(a.weekly_limit) || 0;
+      var rollover = parseFloat(a.rollover) || 0;
+      var effectiveBudget = parseFloat(a.effective_budget) || weeklyLimit;
+      var currency = a.currency || "$";
+      var weekStart = a.week_start || "";
+
+      var pct = effectiveBudget > 0 ? Math.min((spent / effectiveBudget) * 100, 100) : (spent > 0 ? 100 : 0);
+      var isOver = remaining < 0;
+      var ringColor = isOver ? "#ef4444" : (pct > 75 ? "#f59e0b" : "#22c55e");
+      var remColor = isOver ? "#ef4444" : "#22c55e";
+
+      var R = 54;
+      var C = 2 * Math.PI * R;
+      var offset = C - (pct / 100) * C;
+
+      var wsLabel = "";
+      try { var dd = new Date(weekStart + "T00:00:00"); wsLabel = dd.toLocaleDateString(undefined, {month:"short",day:"numeric",year:"numeric"}); } catch(e){ wsLabel = weekStart; }
+
+      var rollNote = "";
+      if (rollover > 0) rollNote = currency + rollover.toFixed(2) + " saved from last week";
+      else if (rollover < 0) rollNote = currency + Math.abs(rollover).toFixed(2) + " overspent last week";
+
+      var h = '';
+      h += '<div class="header"><div><div class="title">Weekly Budget</div><div class="subtitle">Week of ' + wsLabel + '</div></div>';
+      h += '<div class="badge" style="background:' + (isOver ? "rgba(239,68,68,0.15)" : "rgba(34,197,94,0.15)") + ';color:' + (isOver ? "#ef4444" : "#22c55e") + '">' + (isOver ? "Over Budget" : "On Track") + '</div></div>';
+
+      h += '<div class="ring-wrap">';
+      h += '<svg class="ring-svg" viewBox="0 0 128 128"><circle class="ring-bg" cx="64" cy="64" r="' + R + '"/>';
+      h += '<circle class="ring-fill" cx="64" cy="64" r="' + R + '" style="stroke:' + ringColor + ';stroke-dasharray:' + C + ';stroke-dashoffset:' + offset + '"/></svg>';
+      h += '<div class="ring-center"><div class="ring-amount" style="color:' + remColor + '">' + currency + Math.abs(remaining).toFixed(2) + '</div>';
+      h += '<div class="ring-label">' + (isOver ? "over budget" : "remaining") + '</div></div></div>';
+
+      h += '<div class="stats">';
+      h += '<div class="stat"><div class="stat-val">' + currency + spent.toFixed(2) + '</div><div class="stat-lbl">Spent</div></div>';
+      h += '<div class="stat"><div class="stat-val">' + currency + effectiveBudget.toFixed(2) + '</div><div class="stat-lbl">Budget</div></div>';
+      h += '<div class="stat"><div class="stat-val" style="color:' + (rollover >= 0 ? "#22c55e" : "#ef4444") + '">' + (rollover >= 0 ? "+" : "") + currency + rollover.toFixed(2) + '</div><div class="stat-lbl">Rollover</div></div>';
+      h += '</div>';
+
+      h += '<div class="form-section"><div class="form-title">Add Expense</div>';
+      h += '<div class="form-row"><input type="number" id="wb-amt" placeholder="Amount" step="0.01" min="0.01"/>';
+      h += '<input type="text" id="wb-desc" placeholder="Description"/></div>';
+      h += '<div class="btn-row"><button class="btn btn-add" id="wb-add">Add Expense</button>';
+      h += '<button class="btn btn-reset" id="wb-reset">Reset</button></div>';
+      if (rollNote) h += '<div class="rollover-note">' + rollNote + '</div>';
+      h += '</div>';
+
+      root.innerHTML = h;
+
+      var self = this;
+      var addBtn = this.shadowRoot.getElementById("wb-add");
+      var resetBtn = this.shadowRoot.getElementById("wb-reset");
+      if (addBtn) addBtn.onclick = function() { self._addExpense(); };
+      if (resetBtn) resetBtn.onclick = function() { self._resetBudget(); };
+
+      var amtEl = this.shadowRoot.getElementById("wb-amt");
+      var descEl = this.shadowRoot.getElementById("wb-desc");
+      function onEnter(e) { if (e.key === "Enter") self._addExpense(); }
+      if (amtEl) amtEl.onkeydown = onEnter;
+      if (descEl) descEl.onkeydown = onEnter;
+    }
+
+    _addExpense() {
+      var amtEl = this.shadowRoot.getElementById("wb-amt");
+      var descEl = this.shadowRoot.getElementById("wb-desc");
+      if (!amtEl || !descEl) return;
+      var amount = parseFloat(amtEl.value);
+      var desc = descEl.value.trim();
+      if (!amount || amount <= 0) { amtEl.style.borderColor = "#ef4444"; setTimeout(function(){ amtEl.style.borderColor = ""; }, 1500); return; }
+      if (!desc) { descEl.style.borderColor = "#ef4444"; setTimeout(function(){ descEl.style.borderColor = ""; }, 1500); return; }
+      this._hass.callService("weekly_budget", "add_expense", { amount: amount, description: desc });
+      amtEl.value = "";
+      descEl.value = "";
+    }
+
+    _resetBudget() {
       this._hass.callService("weekly_budget", "reset_budget", {});
     }
   }
 
-  _formatWeekStart(dateStr) {
-    if (!dateStr) return "";
-    try {
-      const d = new Date(dateStr + "T00:00:00");
-      return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-    } catch (e) { return dateStr; }
-  }
+  customElements.define("weekly-budget-card", WeeklyBudgetCard);
 
-  getCardSize() { return 5; }
-
-  static getConfigElement() {
-    return document.createElement("weekly-budget-card-editor");
-  }
-
-  static getStubConfig(hass) {
-    const entities = Object.keys(hass.states).filter(
-      (eid) => eid.includes("weekly_budget") || eid.includes("budget_remaining")
-    );
-    const remaining = entities.find((e) => e.includes("remaining"));
-    return { entity: remaining || entities[0] || "" };
-  }
-}
-
-customElements.define("weekly-budget-card", WeeklyBudgetCard);
-
-
-/* ── Config Editor ───────────────────────────────────────────────── */
-
-class WeeklyBudgetCardEditor extends HTMLElement {
-  constructor() {
-    super();
-    this.attachShadow({ mode: "open" });
-    this._config = {};
-    this._hass = null;
-  }
-
-  set hass(hass) {
-    this._hass = hass;
-    const picker = this.shadowRoot && this.shadowRoot.querySelector("ha-entity-picker");
-    if (picker) picker.hass = hass;
-  }
-
-  setConfig(config) {
-    this._config = { ...config };
-    this._render();
-  }
-
-  _render() {
-    if (!this.shadowRoot) return;
-    this.shadowRoot.innerHTML = `
-      <style>
-        .row { padding: 8px 0; }
-        .row label { display: block; font-weight: 500; margin-bottom: 4px; font-size: 14px; color: var(--primary-text-color); }
-        .row .hint { display: block; font-size: 12px; color: var(--secondary-text-color); margin-top: 4px; }
-      </style>
-      <div class="row">
-        <label>Entity</label>
-        <ha-entity-picker allow-custom-entity></ha-entity-picker>
-        <span class="hint">Select the Budget Remaining sensor</span>
-      </div>
-    `;
-    const picker = this.shadowRoot.querySelector("ha-entity-picker");
-    if (picker) {
-      picker.hass = this._hass;
-      picker.value = this._config.entity || "";
-      picker.includeDomains = ["sensor"];
-      picker.addEventListener("value-changed", (ev) => {
-        this._config = { ...this._config, entity: ev.detail.value };
-        this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config }, bubbles: true, composed: true }));
-      });
-    }
-  }
-}
-
-customElements.define("weekly-budget-card-editor", WeeklyBudgetCardEditor);
-
-
-window.customCards = window.customCards || [];
-window.customCards.push({
-  type: "weekly-budget-card",
-  name: "Weekly Budget Overview",
-  description: "Displays your weekly budget status with a progress ring, stats, and quick-add expense form.",
-  preview: false,
-  documentationURL: "https://github.com/weekly-budget-tracker",
-});
+  window.customCards = window.customCards || [];
+  window.customCards.push({
+    type: "weekly-budget-card",
+    name: "Weekly Budget Overview",
+    description: "Shows your weekly budget status with a progress ring, stats, and quick expense entry form.",
+    preview: false,
+  });
+})();
