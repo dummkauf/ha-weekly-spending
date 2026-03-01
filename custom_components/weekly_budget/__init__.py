@@ -84,50 +84,38 @@ def _read_version() -> str:
 
 # ── Frontend registration ────────────────────────────────────────────
 
-CARD_FILES = [
-    "weekly-budget-card.js",
-    "weekly-budget-expenses-card.js",
-    "weekly-budget-add-expense-card.js",
-]
+CARDS_JS = "weekly-budget-cards.js"
 
 
 async def _register_cards(hass: HomeAssistant) -> None:
-    """Register the Lovelace card JS files with the HA frontend.
+    """Register the Lovelace card JS with the HA frontend.
 
-    This follows the exact pattern used by browser_mod:
-      1. Read version from manifest.json
-      2. Register each JS file as a static HTTP path
-      3. Call add_extra_js_url so the frontend loads them automatically
+    Follows browser_mod's exact pattern:
+      1. Single JS file in the component root directory
+      2. Serve it as a static path
+      3. add_extra_js_url so the frontend loads it automatically
     """
     from homeassistant.components.frontend import add_extra_js_url
     from homeassistant.components.http import StaticPathConfig
 
     version = await hass.async_add_executor_job(_read_version)
-    component_dir = os.path.dirname(__file__)
-    www_dir = os.path.join(component_dir, "www")
+    filepath = os.path.join(os.path.dirname(__file__), CARDS_JS)
 
-    _LOGGER.info("Weekly Budget: registering %d card files from %s", len(CARD_FILES), www_dir)
+    _LOGGER.info("Weekly Budget: JS path = %s, exists = %s", filepath, os.path.isfile(filepath))
 
-    # Step 1: Serve each JS file at /weekly_budget/<filename>
-    static_paths = []
-    for filename in CARD_FILES:
-        filepath = os.path.join(www_dir, filename)
-        if not os.path.isfile(filepath):
-            _LOGGER.error("Weekly Budget: JS file NOT found on disk: %s", filepath)
-            continue
-        static_paths.append(
-            StaticPathConfig(f"/weekly_budget/{filename}", filepath, True)
-        )
-        _LOGGER.info("Weekly Budget: serving %s -> /weekly_budget/%s", filepath, filename)
+    if not os.path.isfile(filepath):
+        _LOGGER.error("Weekly Budget: JS file NOT found: %s", filepath)
+        return
 
-    if static_paths:
-        await hass.http.async_register_static_paths(static_paths)
+    url_path = f"/{DOMAIN}/{CARDS_JS}"
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(url_path, filepath, False)]
+    )
+    _LOGGER.info("Weekly Budget: static path registered: %s", url_path)
 
-    # Step 2: Tell frontend to load them as <script type="module"> on every page
-    for filename in CARD_FILES:
-        url = f"/weekly_budget/{filename}?v={version}"
-        add_extra_js_url(hass, url)
-        _LOGGER.info("Weekly Budget: add_extra_js_url(%s)", url)
+    url_with_ver = f"{url_path}?v={version}"
+    add_extra_js_url(hass, url_with_ver)
+    _LOGGER.info("Weekly Budget: add_extra_js_url(%s)", url_with_ver)
 
 
 # ── async_setup (runs before config entries, like browser_mod) ───────

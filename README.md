@@ -5,7 +5,7 @@ A HACS-installable Home Assistant integration that lets household members track 
 ## Features
 
 - **Weekly spending limit** - Set a weekly budget that all household members share.
-- **Expense tracking** - Users log expenses with an amount, description, and their name.
+- **Expense tracking** - Users log expenses with an amount and description. The HA username is attached automatically.
 - **Automatic rollover** - Unspent money carries over to the next week. Overspending is automatically deducted.
 - **Reset button** - Instantly reset the budget back to your configured weekly limit.
 - **Lovelace cards** - Two custom cards: a budget overview with progress ring and an expense list.
@@ -24,7 +24,7 @@ A HACS-installable Home Assistant integration that lets household members track 
 
 ### Manual Installation
 
-1. Copy the `custom_components/weekly_budget/` folder (including its `www/` subfolder) into your Home Assistant `config/custom_components/` directory.
+1. Copy the `custom_components/weekly_budget/` folder into your Home Assistant `config/custom_components/` directory.
 2. Restart Home Assistant.
 
 ## Setup
@@ -42,10 +42,11 @@ The Lovelace card resources are **automatically registered** when the integratio
 
 1. Open any Lovelace dashboard and click the pencil icon (Edit).
 2. Click **"+ Add Card"**.
-3. Search for **"Weekly Budget"** -- you will see two cards:
+3. Search for **"Weekly Budget"** -- you will see three cards:
    - **Weekly Budget Overview** -- budget progress ring, spending stats, rollover info, and an expense input form.
    - **Weekly Budget Expenses** -- scrollable list of all expenses with user names, descriptions, amounts, and timestamps.
-4. Select a card, pick the entity from the dropdown, and click **Save**.
+   - **Weekly Budget Add Expense** -- standalone expense entry form with a remaining budget badge.
+4. Select a card, edit the YAML to set your entity, and click **Save**.
 
 No YAML required.
 
@@ -66,12 +67,10 @@ max_items: 30
 show_total: true
 ```
 
-> **YAML-mode dashboards:** If your Lovelace is in YAML mode (not storage mode), add these resources manually at the top of your `ui-lovelace.yaml`:
+> **YAML-mode dashboards:** If your Lovelace is in YAML mode (not storage mode), add this resource manually at the top of your `ui-lovelace.yaml`:
 > ```yaml
 > resources:
->   - url: /weekly_budget/weekly-budget-card.js
->     type: module
->   - url: /weekly_budget/weekly-budget-expenses-card.js
+>   - url: /weekly_budget/weekly-budget-cards.js
 >     type: module
 > ```
 
@@ -88,7 +87,7 @@ show_total: true
 
 | Service | Description | Parameters |
 |---------|-------------|------------|
-| `weekly_budget.add_expense` | Add a new expense | `amount` (required), `description` (required), `user` (optional) |
+| `weekly_budget.add_expense` | Add a new expense | `amount` (required), `description` (required) |
 | `weekly_budget.reset_budget` | Reset budget to configured limit, clear expenses and rollover | none |
 | `weekly_budget.set_weekly_limit` | Change the weekly spending limit | `amount` (required) |
 
@@ -100,7 +99,6 @@ service: weekly_budget.add_expense
 data:
   amount: 42.50
   description: "Grocery run"
-  user: "Alice"
 ```
 
 **Reset the budget:**
@@ -126,19 +124,17 @@ data:
 
 ```
 custom_components/weekly_budget/
-  __init__.py         # Integration setup, services, frontend registration, rollover logic
-  config_flow.py      # UI configuration flow
-  const.py            # Constants
-  manifest.json       # Integration manifest
-  sensor.py           # Sensor entities
-  services.yaml       # Service definitions
-  strings.json        # UI strings
+  __init__.py                 # Integration setup, services, frontend registration, rollover logic
+  config_flow.py              # UI configuration flow
+  const.py                    # Constants
+  manifest.json               # Integration manifest
+  sensor.py                   # Sensor entities
+  services.yaml               # Service definitions
+  strings.json                # UI strings
+  weekly-budget-cards.js      # All three Lovelace cards (single file)
   translations/
-    en.json           # English translations
-  www/
-    weekly-budget-card.js           # Budget overview Lovelace card
-    weekly-budget-expenses-card.js  # Expense list Lovelace card
-hacs.json                           # HACS configuration
+    en.json                   # English translations
+hacs.json                     # HACS configuration
 ```
 
 ## License
