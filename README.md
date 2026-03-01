@@ -31,24 +31,34 @@ A HACS-installable Home Assistant integration that lets household members track 
 
 1. Go to **Settings > Devices & Services > Add Integration**.
 2. Search for **Weekly Budget Tracker**.
-3. Enter your weekly spending limit and preferred currency symbol.
+3. Enter your weekly spending limit, preferred currency symbol, and which day your week starts on.
 4. Click **Submit**.
 
 ## Lovelace Cards
 
-The Lovelace card resources are **automatically registered** when the integration loads -- no manual resource registration is needed.
+### Registering the Card Resource
+
+The integration copies its JS file to `config/www/` on startup and attempts to register it automatically. If the cards do not appear in the card picker, you can add the resource manually:
+
+1. Go to **Settings > Dashboards**.
+2. Click the **three-dot menu** in the top right corner and select **Resources**.
+3. Click **Add Resource**.
+4. Set the URL to: `/local/weekly-budget-cards.js`
+5. Set the type to: **JavaScript Module**
+6. Click **Create**.
+7. Refresh the page (or open a new browser tab).
+
+> **Tip:** If you update the integration and the cards don't reflect the changes, edit the resource URL to append a cache-busting parameter (e.g. `/local/weekly-budget-cards.js?v=2`) and refresh.
 
 ### Adding Cards to Your Dashboard
 
 1. Open any Lovelace dashboard and click the pencil icon (Edit).
 2. Click **"+ Add Card"**.
 3. Search for **"Weekly Budget"** -- you will see three cards:
-   - **Weekly Budget Overview** -- budget progress ring, spending stats, rollover info, and an expense input form.
-   - **Weekly Budget Expenses** -- scrollable list of all expenses with user names, descriptions, amounts, and timestamps.
+   - **Weekly Budget Overview** -- budget progress ring, spending stats, rollover info, and an expense input form. Configurable visibility toggles for each section.
+   - **Weekly Budget Expenses** -- compact four-column list of all expenses (date, amount, user, description).
    - **Weekly Budget Add Expense** -- standalone expense entry form with a remaining budget badge.
-4. Select a card, edit the YAML to set your entity, and click **Save**.
-
-No YAML required.
+4. Select a card, choose your entity from the dropdown, and click **Save**.
 
 ### Budget Overview Card (YAML Reference)
 
@@ -70,7 +80,7 @@ show_total: true
 > **YAML-mode dashboards:** If your Lovelace is in YAML mode (not storage mode), add this resource manually at the top of your `ui-lovelace.yaml`:
 > ```yaml
 > resources:
->   - url: /weekly_budget/weekly-budget-cards.js
+>   - url: /local/weekly-budget-cards.js
 >     type: module
 > ```
 
@@ -115,7 +125,7 @@ data:
 
 ## How Rollover Works
 
-- At the start of each new week (Monday), the integration calculates: `rollover = (weekly_limit + previous_rollover) - spent`
+- At the start of each new week (on your configured start day), the integration calculates: `rollover = (weekly_limit + previous_rollover) - spent`
 - **Under budget:** The surplus is added to next week's effective budget.
 - **Over budget:** The deficit is subtracted from next week's effective budget.
 - **Reset:** Clears all expenses, sets rollover to 0, and restarts from the configured weekly limit.
