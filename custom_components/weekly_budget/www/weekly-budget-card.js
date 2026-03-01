@@ -378,34 +378,11 @@ class WeeklyBudgetCard extends HTMLElement {
     return 5;
   }
 
-  static getConfigForm() {
-    return {
-      schema: [
-        {
-          name: "entity",
-          required: true,
-          selector: {
-            entity: {
-              domain: "sensor",
-              integration: "weekly_budget",
-            },
-          },
-        },
-      ],
-      computeLabel: (schema) => {
-        if (schema.name === "entity") return "Budget Entity";
-        return undefined;
-      },
-      computeHelper: (schema) => {
-        if (schema.name === "entity")
-          return "Select the weekly_budget_remaining sensor";
-        return undefined;
-      },
-    };
+  static getConfigElement() {
+    return document.createElement("weekly-budget-card-editor");
   }
 
   static getStubConfig(hass) {
-    // Try to find the remaining sensor automatically
     const entities = Object.keys(hass.states).filter((eid) =>
       eid.startsWith("sensor.weekly_budget_remaining")
     );
@@ -414,6 +391,92 @@ class WeeklyBudgetCard extends HTMLElement {
 }
 
 customElements.define("weekly-budget-card", WeeklyBudgetCard);
+
+
+/**
+ * Visual config editor for the Weekly Budget Overview card.
+ * Uses HA's built-in <ha-entity-picker> for reliable entity selection.
+ */
+class WeeklyBudgetCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._config = {};
+    this._hass = null;
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    // Forward hass to the entity picker if it exists
+    const picker = this.shadowRoot && this.shadowRoot.querySelector("ha-entity-picker");
+    if (picker) picker.hass = hass;
+  }
+
+  setConfig(config) {
+    this._config = { ...config };
+    this._render();
+  }
+
+  _render() {
+    if (!this.shadowRoot) return;
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        .editor-row {
+          padding: 8px 0;
+        }
+        .editor-row label {
+          display: block;
+          font-weight: 500;
+          margin-bottom: 4px;
+          font-size: 14px;
+          color: var(--primary-text-color);
+        }
+        .editor-row .hint {
+          display: block;
+          font-size: 12px;
+          color: var(--secondary-text-color);
+          margin-top: 4px;
+        }
+      </style>
+      <div class="editor-row">
+        <label>Entity</label>
+        <ha-entity-picker
+          .hass=${null}
+          .value="${this._config.entity || ""}"
+          .includeDomains=${["sensor"]}
+          allow-custom-entity
+        ></ha-entity-picker>
+        <span class="hint">Select sensor.weekly_budget_remaining</span>
+      </div>
+    `;
+
+    // Configure and wire up the entity picker
+    const picker = this.shadowRoot.querySelector("ha-entity-picker");
+    if (picker) {
+      picker.hass = this._hass;
+      picker.value = this._config.entity || "";
+      picker.includeDomains = ["sensor"];
+      picker.addEventListener("value-changed", (ev) => {
+        this._config = { ...this._config, entity: ev.detail.value };
+        this._fireChanged();
+      });
+    }
+  }
+
+  _fireChanged() {
+    this.dispatchEvent(
+      new CustomEvent("config-changed", {
+        detail: { config: this._config },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+}
+
+customElements.define("weekly-budget-card-editor", WeeklyBudgetCardEditor);
+
 
 window.customCards = window.customCards || [];
 window.customCards.push({

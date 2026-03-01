@@ -294,61 +294,8 @@ class WeeklyBudgetExpensesCard extends HTMLElement {
     return 4;
   }
 
-  static getConfigForm() {
-    return {
-      schema: [
-        {
-          name: "entity",
-          required: true,
-          selector: {
-            entity: {
-              domain: "sensor",
-              integration: "weekly_budget",
-            },
-          },
-        },
-        {
-          name: "title",
-          selector: { text: {} },
-        },
-        {
-          type: "grid",
-          name: "",
-          schema: [
-            {
-              name: "max_items",
-              selector: {
-                number: {
-                  min: 1,
-                  max: 200,
-                  mode: "box",
-                },
-              },
-            },
-            {
-              name: "show_total",
-              selector: { boolean: {} },
-            },
-          ],
-        },
-      ],
-      computeLabel: (schema) => {
-        const labels = {
-          entity: "Budget Entity",
-          title: "Card Title",
-          max_items: "Max Expenses to Show",
-          show_total: "Show Total",
-        };
-        return labels[schema.name] || undefined;
-      },
-      computeHelper: (schema) => {
-        if (schema.name === "entity")
-          return "Select any weekly_budget sensor";
-        if (schema.name === "title")
-          return 'Default: "Expenses This Week"';
-        return undefined;
-      },
-    };
+  static getConfigElement() {
+    return document.createElement("weekly-budget-expenses-card-editor");
   }
 
   static getStubConfig(hass) {
@@ -365,6 +312,149 @@ class WeeklyBudgetExpensesCard extends HTMLElement {
 }
 
 customElements.define("weekly-budget-expenses-card", WeeklyBudgetExpensesCard);
+
+
+/**
+ * Visual config editor for the Weekly Budget Expenses card.
+ * Uses HA's built-in <ha-entity-picker> and native inputs.
+ */
+class WeeklyBudgetExpensesCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._config = {};
+    this._hass = null;
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    const picker = this.shadowRoot && this.shadowRoot.querySelector("ha-entity-picker");
+    if (picker) picker.hass = hass;
+  }
+
+  setConfig(config) {
+    this._config = { ...config };
+    this._render();
+  }
+
+  _render() {
+    if (!this.shadowRoot) return;
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        .editor-row {
+          padding: 8px 0;
+        }
+        .editor-row label {
+          display: block;
+          font-weight: 500;
+          margin-bottom: 4px;
+          font-size: 14px;
+          color: var(--primary-text-color);
+        }
+        .editor-row .hint {
+          display: block;
+          font-size: 12px;
+          color: var(--secondary-text-color);
+          margin-top: 4px;
+        }
+        .editor-row input[type="text"],
+        .editor-row input[type="number"] {
+          width: 100%;
+          box-sizing: border-box;
+          padding: 8px;
+          border: 1px solid var(--divider-color, #e5e7eb);
+          border-radius: 4px;
+          font-size: 14px;
+          color: var(--primary-text-color);
+          background: var(--card-background-color, #fff);
+        }
+        .editor-row ha-switch {
+          margin-top: 4px;
+        }
+        .grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px;
+        }
+      </style>
+      <div class="editor-row">
+        <label>Entity</label>
+        <ha-entity-picker
+          allow-custom-entity
+        ></ha-entity-picker>
+        <span class="hint">Select any weekly_budget sensor</span>
+      </div>
+      <div class="editor-row">
+        <label>Card Title</label>
+        <input type="text" id="title" placeholder="Expenses This Week" value="${this._config.title || ""}" />
+      </div>
+      <div class="grid">
+        <div class="editor-row">
+          <label>Max Items</label>
+          <input type="number" id="max_items" min="1" max="200" placeholder="50" value="${this._config.max_items || ""}" />
+        </div>
+        <div class="editor-row">
+          <label>Show Total</label>
+          <ha-switch id="show_total" ${this._config.show_total !== false ? "checked" : ""}></ha-switch>
+        </div>
+      </div>
+    `;
+
+    // Entity picker
+    const picker = this.shadowRoot.querySelector("ha-entity-picker");
+    if (picker) {
+      picker.hass = this._hass;
+      picker.value = this._config.entity || "";
+      picker.includeDomains = ["sensor"];
+      picker.addEventListener("value-changed", (ev) => {
+        this._config = { ...this._config, entity: ev.detail.value };
+        this._fireChanged();
+      });
+    }
+
+    // Title
+    const titleEl = this.shadowRoot.getElementById("title");
+    if (titleEl) {
+      titleEl.addEventListener("input", (ev) => {
+        this._config = { ...this._config, title: ev.target.value || undefined };
+        this._fireChanged();
+      });
+    }
+
+    // Max items
+    const maxEl = this.shadowRoot.getElementById("max_items");
+    if (maxEl) {
+      maxEl.addEventListener("input", (ev) => {
+        const val = parseInt(ev.target.value);
+        this._config = { ...this._config, max_items: val > 0 ? val : undefined };
+        this._fireChanged();
+      });
+    }
+
+    // Show total toggle
+    const toggleEl = this.shadowRoot.getElementById("show_total");
+    if (toggleEl) {
+      toggleEl.addEventListener("change", (ev) => {
+        this._config = { ...this._config, show_total: ev.target.checked };
+        this._fireChanged();
+      });
+    }
+  }
+
+  _fireChanged() {
+    this.dispatchEvent(
+      new CustomEvent("config-changed", {
+        detail: { config: this._config },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+}
+
+customElements.define("weekly-budget-expenses-card-editor", WeeklyBudgetExpensesCardEditor);
+
 
 window.customCards = window.customCards || [];
 window.customCards.push({

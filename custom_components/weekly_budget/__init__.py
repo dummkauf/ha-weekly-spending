@@ -176,18 +176,23 @@ class BudgetData:
 async def _async_register_frontend(hass: HomeAssistant) -> None:
     """Serve card JS files and inject them into the HA frontend.
 
-    Uses add_extra_js_url which injects <script type="module"> tags into
-    every HA frontend page. The cards' window.customCards.push() calls
-    then register them in the card picker automatically.
+    Follows the same pattern used by browser_mod and other proven HACS
+    integrations:
+      1. Register static paths so the HA HTTP server can serve the JS files.
+      2. Call add_extra_js_url with a cache-busting query string so the
+         frontend injects <script type="module"> tags on every page load.
+      3. The cards' window.customCards.push() calls then register them in
+         the Lovelace card picker automatically.
     """
     from homeassistant.components.frontend import add_extra_js_url
-
-    www_dir = os.path.join(os.path.dirname(__file__), "www")
 
     CARD_FILES = [
         "weekly-budget-card.js",
         "weekly-budget-expenses-card.js",
     ]
+
+    # Use hass.config.path() for reliable absolute paths, just like browser_mod
+    www_dir = hass.config.path(f"custom_components/{DOMAIN}/www")
 
     # 1. Serve the JS files at /weekly_budget/<filename>
     await hass.http.async_register_static_paths(
@@ -195,17 +200,18 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
             StaticPathConfig(
                 url_path=f"/{DOMAIN}/{filename}",
                 path=os.path.join(www_dir, filename),
-                cache_headers=False,
+                cache_headers=True,
             )
             for filename in CARD_FILES
         ]
     )
 
     # 2. Tell the frontend to load them as ES modules on every page.
-    #    This bypasses Lovelace resource storage entirely, so no manual
-    #    resource registration is ever needed.
+    #    The cache-busting query param ensures browsers fetch the latest
+    #    version after updates (same technique used by browser_mod).
+    cache_buster = "1.0.0"
     for filename in CARD_FILES:
-        add_extra_js_url(hass, f"/{DOMAIN}/{filename}")
+        add_extra_js_url(hass, f"/{DOMAIN}/{filename}?v={cache_buster}")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
