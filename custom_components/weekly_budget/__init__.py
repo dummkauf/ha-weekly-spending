@@ -200,7 +200,7 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
             StaticPathConfig(
                 url_path=f"/{DOMAIN}/{filename}",
                 path=os.path.join(www_dir, filename),
-                cache_headers=True,
+                cache_headers=False,
             )
             for filename in CARD_FILES
         ]
@@ -209,7 +209,7 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     # 2. Tell the frontend to load them as ES modules on every page.
     #    The cache-busting query param ensures browsers fetch the latest
     #    version after updates (same technique used by browser_mod).
-    cache_buster = "1.0.0"
+    cache_buster = "1.1.0"
     for filename in CARD_FILES:
         add_extra_js_url(hass, f"/{DOMAIN}/{filename}?v={cache_buster}")
 
