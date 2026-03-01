@@ -90,16 +90,31 @@ CARDS_JS = "weekly-budget-cards.js"
 def _copy_cards_to_www(hass_config_path: str) -> str:
     """Copy the JS file to config/www/ so HA serves it at /local/.
 
+    Always overwrites to ensure the latest version is served.
     Returns the destination path on disk.
     """
+    import hashlib
     import shutil
 
     src = os.path.join(os.path.dirname(__file__), CARDS_JS)
     www_dir = os.path.join(hass_config_path, "www")
     os.makedirs(www_dir, exist_ok=True)
     dst = os.path.join(www_dir, CARDS_JS)
+
+    # Always overwrite -- compare hashes to log whether it changed
+    src_hash = ""
+    dst_hash = ""
+    with open(src, "rb") as f:
+        src_hash = hashlib.md5(f.read()).hexdigest()
+    if os.path.isfile(dst):
+        with open(dst, "rb") as f:
+            dst_hash = hashlib.md5(f.read()).hexdigest()
+
     shutil.copy2(src, dst)
-    _LOGGER.info("Weekly Budget: copied %s -> %s", src, dst)
+    if src_hash != dst_hash:
+        _LOGGER.info("Weekly Budget: updated %s (hash %s -> %s)", dst, dst_hash[:8], src_hash[:8])
+    else:
+        _LOGGER.info("Weekly Budget: %s is up to date (hash %s)", dst, src_hash[:8])
     return dst
 
 
