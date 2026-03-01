@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -14,6 +15,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.components.http import StaticPathConfig
 
 from .const import (
     DOMAIN,
@@ -171,8 +173,93 @@ class BudgetData:
         async_dispatcher_send(self.hass, SIGNAL_BUDGET_UPDATED)
 
 
+async def _async_register_panel_resources(hass: HomeAssistant) -> None:
+    """Add our card JS as extra module URLs on the frontend."""
+    # This is the reliable way to get custom cards loaded automatically.
+    from homeassistant.components.lovelace import (
+        DOMAIN as LOVELACE_DOMAIN,
+    )
+    from homeassistant.components.lovelace.resources import (
+        ResourceStorageCollection,
+    )
+
+    # Access the lovelace resource collection
+    lovelace_data = hass.data.get(LOVELACE_DOMAIN)
+    if not lovelace_data:
+        _LOGGER.warning("Lovelace not ready; cards must be added as resources manually")
+        return
+
+    resources = None
+    # Try to get the resource collection from lovelace data
+    if hasattr(lovelace_data, "resources"):
+        resources = lovelace_data.resources
+    elif isinstance(lovelace_data, dict) and "resources" in lovelace_data:
+        resources = lovelace_data["resources"]
+
+    if resources and isinstance(resources, ResourceStorageCollection):
+        card_urls = [
+            f"/{DOMAIN}/weekly-budget-card.js",
+            f"/{DOMAIN}/weekly-budget-expenses-card.js",
+        ]
+        # Check existing resources to avoid duplicates
+        existing_urls = set()
+        if hasattr(resources, "async_items"):
+            for item in await resources.async_items():
+                existing_urls.add(item.get("url", ""))
+        elif hasattr(resources, "data"):
+            for item in (resources.data or {}).values():
+                existing_urls.add(item.get("url", ""))
+
+        for url in card_urls:
+            if url not in existing_urls:
+                try:
+                    await resources.async_create_item(
+                        {"res_type": "module", "url": url}
+                    )
+                    _LOGGER.info("Registered Lovelace resource: %s", url)
+                except Exception:
+                    _LOGGER.debug(
+                        "Could not auto-register resource %s; add it manually", url
+                    )
+    else:
+        _LOGGER.info(
+            "Lovelace is in YAML mode. Add these resources manually:\n"
+            "  - url: /%s/weekly-budget-card.js\n    type: module\n"
+            "  - url: /%s/weekly-budget-expenses-card.js\n    type: module",
+            DOMAIN,
+            DOMAIN,
+        )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Weekly Budget from a config entry."""
+
+    # ── Register frontend card resources (once) ──────────────────────
+    should_register_frontend = f"{DOMAIN}_frontend_registered" not in hass.data
+    if should_register_frontend:
+        hass.data[f"{DOMAIN}_frontend_registered"] = True
+
+        www_dir = os.path.join(os.path.dirname(__file__), "www")
+
+        # Serve the www/ folder inside the component at /weekly_budget/
+        await hass.http.async_register_static_paths(
+            [
+                StaticPathConfig(
+                    url_path=f"/{DOMAIN}/weekly-budget-card.js",
+                    path=os.path.join(www_dir, "weekly-budget-card.js"),
+                    cache_headers=False,
+                ),
+                StaticPathConfig(
+                    url_path=f"/{DOMAIN}/weekly-budget-expenses-card.js",
+                    path=os.path.join(www_dir, "weekly-budget-expenses-card.js"),
+                    cache_headers=False,
+                ),
+            ]
+        )
+
+        # Add the JS files as Lovelace resources so cards auto-register
+        await _async_register_panel_resources(hass)
+
     budget_data = BudgetData(hass, entry)
     await budget_data.async_load()
 

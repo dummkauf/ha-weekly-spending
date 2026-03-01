@@ -24,9 +24,8 @@ A HACS-installable Home Assistant integration that lets household members track 
 
 ### Manual Installation
 
-1. Copy the `custom_components/weekly_budget/` folder into your Home Assistant `config/custom_components/` directory.
-2. Copy both `.js` files from `www/` into your `config/www/` directory.
-3. Restart Home Assistant.
+1. Copy the `custom_components/weekly_budget/` folder (including its `www/` subfolder) into your Home Assistant `config/custom_components/` directory.
+2. Restart Home Assistant.
 
 ## Setup
 
@@ -37,29 +36,27 @@ A HACS-installable Home Assistant integration that lets household members track 
 
 ## Lovelace Cards
 
-After installation, register the cards as resources:
+The Lovelace card resources are **automatically registered** when the integration loads -- no manual resource registration is needed.
 
-### Add Resources
+### Adding Cards to Your Dashboard
 
-Go to **Settings > Dashboards > Resources** (or the three-dot menu > Resources) and add:
+1. Open any Lovelace dashboard and click the pencil icon (Edit).
+2. Click **"+ Add Card"**.
+3. Search for **"Weekly Budget"** -- you will see two cards:
+   - **Weekly Budget Overview** -- budget progress ring, spending stats, rollover info, and an expense input form.
+   - **Weekly Budget Expenses** -- scrollable list of all expenses with user names, descriptions, amounts, and timestamps.
+4. Select a card, pick the entity from the dropdown, and click **Save**.
 
-| URL | Type |
-|-----|------|
-| `/local/weekly-budget-card.js` | JavaScript Module |
-| `/local/weekly-budget-expenses-card.js` | JavaScript Module |
+No YAML required.
 
-### Budget Overview Card
-
-Shows spending progress, remaining budget, rollover, and a form to add expenses.
+### Budget Overview Card (YAML Reference)
 
 ```yaml
 type: custom:weekly-budget-card
 entity: sensor.weekly_budget_remaining
 ```
 
-### Expenses List Card
-
-Shows all expenses for the current week with user, description, amount, and timestamp.
+### Expenses List Card (YAML Reference)
 
 ```yaml
 type: custom:weekly-budget-expenses-card
@@ -69,21 +66,14 @@ max_items: 30
 show_total: true
 ```
 
-### Example Dashboard
-
-A complete dashboard combining both cards:
-
-```yaml
-views:
-  - title: Budget
-    path: budget
-    cards:
-      - type: custom:weekly-budget-card
-        entity: sensor.weekly_budget_remaining
-      - type: custom:weekly-budget-expenses-card
-        entity: sensor.weekly_budget_remaining
-        title: "Expenses This Week"
-```
+> **YAML-mode dashboards:** If your Lovelace is in YAML mode (not storage mode), add these resources manually at the top of your `ui-lovelace.yaml`:
+> ```yaml
+> resources:
+>   - url: /weekly_budget/weekly-budget-card.js
+>     type: module
+>   - url: /weekly_budget/weekly-budget-expenses-card.js
+>     type: module
+> ```
 
 ## Sensors Created
 
@@ -136,7 +126,7 @@ data:
 
 ```
 custom_components/weekly_budget/
-  __init__.py         # Integration setup, services, rollover logic
+  __init__.py         # Integration setup, services, frontend registration, rollover logic
   config_flow.py      # UI configuration flow
   const.py            # Constants
   manifest.json       # Integration manifest
@@ -145,10 +135,10 @@ custom_components/weekly_budget/
   strings.json        # UI strings
   translations/
     en.json           # English translations
-www/
-  weekly-budget-card.js           # Budget overview Lovelace card
-  weekly-budget-expenses-card.js  # Expense list Lovelace card
-hacs.json                         # HACS configuration
+  www/
+    weekly-budget-card.js           # Budget overview Lovelace card
+    weekly-budget-expenses-card.js  # Expense list Lovelace card
+hacs.json                           # HACS configuration
 ```
 
 ## License
