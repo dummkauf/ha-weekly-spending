@@ -60,6 +60,110 @@ if (!customElements.get('wb-entity-editor')) {
 }
 
 
+/* ── Overview Card Editor ────────────────────────────────────── */
+
+class WbOverviewEditor extends HTMLElement {
+  constructor() {
+    super();
+    this._config = {};
+    this._hass = null;
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    var picker = this.querySelector('ha-entity-picker');
+    if (picker) picker.hass = hass;
+  }
+
+  setConfig(config) {
+    this._config = Object.assign({}, config);
+    this._render();
+  }
+
+  _render() {
+    var cfg = this._config;
+    var showBar = cfg.show_bar !== false;
+    var showRemaining = cfg.show_remaining !== false;
+    var showSpent = cfg.show_spent !== false;
+    var showBudget = cfg.show_budget === true;
+    var showRollover = cfg.show_rollover === true;
+    var showExpenseForm = cfg.show_expense_form === true;
+    var showReset = cfg.show_reset === true;
+
+    this.innerHTML =
+      '<div style="padding:16px 0">' +
+        '<ha-entity-picker allow-custom-entity></ha-entity-picker>' +
+        '<p style="margin:8px 0 16px;font-size:12px;color:var(--secondary-text-color)">' +
+          'Select a weekly_budget sensor (e.g. Budget Remaining)' +
+        '</p>' +
+        '<div style="font-weight:600;margin-bottom:12px">Visible Sections</div>' +
+        '<div id="wb-toggles" style="display:flex;flex-direction:column;gap:10px">' +
+          this._toggle('show_bar', 'Spending Bar', showBar) +
+          this._toggle('show_remaining', 'Remaining', showRemaining) +
+          this._toggle('show_spent', 'Spent', showSpent) +
+          this._toggle('show_budget', 'Budget', showBudget) +
+          this._toggle('show_rollover', 'Rollover', showRollover) +
+          this._toggle('show_expense_form', 'Add Expense Form', showExpenseForm) +
+          this._toggle('show_reset', 'Reset Button', showReset) +
+        '</div>' +
+      '</div>';
+
+    var picker = this.querySelector('ha-entity-picker');
+    if (picker) {
+      if (this._hass) picker.hass = this._hass;
+      picker.value = cfg.entity || '';
+      picker.includeDomains = ['sensor'];
+      picker.entityFilter = function(stateObj) {
+        var id = stateObj.entity_id;
+        return id.indexOf('weekly_budget') !== -1 ||
+               id.indexOf('budget_remaining') !== -1 ||
+               id.indexOf('budget_spent') !== -1 ||
+               id.indexOf('budget_rollover') !== -1 ||
+               id.indexOf('weekly_limit') !== -1;
+      };
+      var self = this;
+      picker.addEventListener('value-changed', function(ev) {
+        if (!ev.detail || ev.detail.value === self._config.entity) return;
+        self._config = Object.assign({}, self._config, { entity: ev.detail.value });
+        self._fire();
+      });
+    }
+
+    var self = this;
+    var checkboxes = this.querySelectorAll('input[type="checkbox"]');
+    for (var i = 0; i < checkboxes.length; i++) {
+      checkboxes[i].addEventListener('change', function() {
+        var key = this.getAttribute('data-key');
+        var obj = {};
+        obj[key] = this.checked;
+        self._config = Object.assign({}, self._config, obj);
+        self._fire();
+      });
+    }
+  }
+
+  _toggle(key, label, checked) {
+    return '<label style="display:flex;align-items:center;gap:10px;cursor:pointer">' +
+      '<input type="checkbox" data-key="' + key + '"' + (checked ? ' checked' : '') +
+        ' style="width:18px;height:18px;cursor:pointer;accent-color:var(--primary-color,#2563eb)"/>' +
+      '<span style="font-size:14px">' + label + '</span>' +
+    '</label>';
+  }
+
+  _fire() {
+    this.dispatchEvent(new CustomEvent('config-changed', {
+      detail: { config: this._config },
+      bubbles: true,
+      composed: true
+    }));
+  }
+}
+
+if (!customElements.get('wb-overview-editor')) {
+  customElements.define('wb-overview-editor', WbOverviewEditor);
+}
+
+
 /* ── Overview Card ──────────────────────────────────────────── */
 
 class WeeklyBudgetCard extends HTMLElement {
@@ -71,7 +175,7 @@ class WeeklyBudgetCard extends HTMLElement {
   }
 
   static getConfigElement() {
-    return document.createElement('wb-entity-editor');
+    return document.createElement('wb-overview-editor');
   }
 
   static getStubConfig(hass) {
@@ -87,7 +191,16 @@ class WeeklyBudgetCard extends HTMLElement {
         }
       }
     }
-    return { entity: match };
+    return {
+      entity: match,
+      show_bar: true,
+      show_remaining: true,
+      show_spent: true,
+      show_budget: false,
+      show_rollover: false,
+      show_expense_form: false,
+      show_reset: false
+    };
   }
 
   setConfig(config) {
@@ -108,20 +221,22 @@ class WeeklyBudgetCard extends HTMLElement {
       '<ha-card>' +
         '<div style="padding:20px">' +
           '<div style="font-size:18px;font-weight:700;margin-bottom:16px">Weekly Budget</div>' +
-          '<div style="background:#e5e7eb;border-radius:8px;height:12px;margin-bottom:16px;overflow:hidden">' +
+          '<div id="wb-bar-wrap" style="background:#e5e7eb;border-radius:8px;height:12px;margin-bottom:16px;overflow:hidden">' +
             '<div id="wb-bar" style="height:100%;width:0%;border-radius:8px;transition:width 0.3s"></div>' +
           '</div>' +
           '<div id="wb-info" style="color:#888;text-align:center">Select an entity in card settings</div>' +
-          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px" id="wb-stats"></div>' +
-          '<div style="display:flex;gap:8px;margin-bottom:8px">' +
-            '<input type="number" id="wb-amt" placeholder="Amount" step="0.01" min="0.01" style="flex:1;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:14px"/>' +
-            '<input type="text" id="wb-desc" placeholder="Description" style="flex:2;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:14px"/>' +
+          '<div id="wb-stats" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px"></div>' +
+          '<div id="wb-form-wrap">' +
+            '<div style="display:flex;gap:8px;margin-bottom:8px">' +
+              '<input type="number" id="wb-amt" placeholder="Amount" step="0.01" min="0.01" style="flex:1;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:14px"/>' +
+              '<input type="text" id="wb-desc" placeholder="Description" style="flex:2;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:14px"/>' +
+            '</div>' +
+            '<button id="wb-add" style="width:100%;padding:10px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">Add Expense</button>' +
+            '<div id="wb-msg" style="text-align:center;margin-top:8px;color:#16a34a;display:none;font-weight:600">Expense added!</div>' +
           '</div>' +
-          '<div style="display:flex;gap:8px">' +
-            '<button id="wb-add" style="flex:1;padding:10px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">Add Expense</button>' +
-            '<button id="wb-reset" style="padding:10px 16px;background:#dc2626;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">Reset</button>' +
+          '<div id="wb-reset-wrap" style="margin-top:8px">' +
+            '<button id="wb-reset" style="width:100%;padding:10px;background:#dc2626;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">Reset Budget</button>' +
           '</div>' +
-          '<div id="wb-msg" style="text-align:center;margin-top:8px;color:#16a34a;display:none;font-weight:600">Expense added!</div>' +
         '</div>' +
       '</ha-card>';
 
@@ -136,15 +251,33 @@ class WeeklyBudgetCard extends HTMLElement {
 
   _updateDisplay() {
     if (!this._hass || !this._config || !this._config.entity) return;
-    var s = this._hass.states[this._config.entity];
+    var cfg = this._config;
+    var s = this._hass.states[cfg.entity];
     var infoEl = this.querySelector('#wb-info');
     var statsEl = this.querySelector('#wb-stats');
     var barEl = this.querySelector('#wb-bar');
+    var barWrap = this.querySelector('#wb-bar-wrap');
+    var formWrap = this.querySelector('#wb-form-wrap');
+    var resetWrap = this.querySelector('#wb-reset-wrap');
     if (!s) {
-      if (infoEl) infoEl.textContent = 'Entity not found: ' + this._config.entity;
+      if (infoEl) infoEl.textContent = 'Entity not found: ' + cfg.entity;
       return;
     }
     if (infoEl) infoEl.style.display = 'none';
+
+    /* Visibility toggles */
+    var showBar = cfg.show_bar !== false;
+    var showRemaining = cfg.show_remaining !== false;
+    var showSpent = cfg.show_spent !== false;
+    var showBudget = cfg.show_budget === true;
+    var showRollover = cfg.show_rollover === true;
+    var showForm = cfg.show_expense_form === true;
+    var showReset = cfg.show_reset === true;
+
+    if (barWrap) barWrap.style.display = showBar ? '' : 'none';
+    if (formWrap) formWrap.style.display = showForm ? '' : 'none';
+    if (resetWrap) resetWrap.style.display = showReset ? '' : 'none';
+
     var a = s.attributes || {};
     var cur = a.currency || '$';
     var rem = parseFloat(s.state) || 0;
@@ -157,24 +290,48 @@ class WeeklyBudgetCard extends HTMLElement {
       barEl.style.width = pct + '%';
       barEl.style.background = barColor;
     }
+
+    /* Build only the enabled stat boxes */
     if (statsEl) {
-      statsEl.innerHTML =
-        '<div style="padding:12px;background:#f0fdf4;border-radius:8px;text-align:center">' +
-          '<div style="font-size:12px;color:#666">Remaining</div>' +
-          '<div style="font-size:20px;font-weight:700;color:#16a34a">' + cur + rem.toFixed(2) + '</div>' +
-        '</div>' +
-        '<div style="padding:12px;background:#fef2f2;border-radius:8px;text-align:center">' +
-          '<div style="font-size:12px;color:#666">Spent</div>' +
-          '<div style="font-size:20px;font-weight:700;color:#dc2626">' + cur + spent.toFixed(2) + '</div>' +
-        '</div>' +
-        '<div style="padding:12px;background:#f8fafc;border-radius:8px;text-align:center">' +
-          '<div style="font-size:12px;color:#666">Budget</div>' +
-          '<div style="font-size:20px;font-weight:700">' + cur + lim.toFixed(2) + '</div>' +
-        '</div>' +
-        '<div style="padding:12px;background:#f8fafc;border-radius:8px;text-align:center">' +
-          '<div style="font-size:12px;color:#666">Rollover</div>' +
-          '<div style="font-size:20px;font-weight:700;color:' + (roll >= 0 ? '#16a34a' : '#dc2626') + '">' + cur + roll.toFixed(2) + '</div>' +
-        '</div>';
+      var statCards = '';
+      var count = 0;
+      if (showRemaining) {
+        statCards +=
+          '<div style="padding:12px;background:#f0fdf4;border-radius:8px;text-align:center">' +
+            '<div style="font-size:12px;color:#666">Remaining</div>' +
+            '<div style="font-size:20px;font-weight:700;color:#16a34a">' + cur + rem.toFixed(2) + '</div>' +
+          '</div>';
+        count++;
+      }
+      if (showSpent) {
+        statCards +=
+          '<div style="padding:12px;background:#fef2f2;border-radius:8px;text-align:center">' +
+            '<div style="font-size:12px;color:#666">Spent</div>' +
+            '<div style="font-size:20px;font-weight:700;color:#dc2626">' + cur + spent.toFixed(2) + '</div>' +
+          '</div>';
+        count++;
+      }
+      if (showBudget) {
+        statCards +=
+          '<div style="padding:12px;background:#f8fafc;border-radius:8px;text-align:center">' +
+            '<div style="font-size:12px;color:#666">Budget</div>' +
+            '<div style="font-size:20px;font-weight:700">' + cur + lim.toFixed(2) + '</div>' +
+          '</div>';
+        count++;
+      }
+      if (showRollover) {
+        statCards +=
+          '<div style="padding:12px;background:#f8fafc;border-radius:8px;text-align:center">' +
+            '<div style="font-size:12px;color:#666">Rollover</div>' +
+            '<div style="font-size:20px;font-weight:700;color:' + (roll >= 0 ? '#16a34a' : '#dc2626') + '">' + cur + roll.toFixed(2) + '</div>' +
+          '</div>';
+        count++;
+      }
+      /* Adjust grid columns to match visible count */
+      var cols = count <= 1 ? '1fr' : count === 3 ? '1fr 1fr 1fr' : '1fr 1fr';
+      statsEl.style.gridTemplateColumns = cols;
+      statsEl.style.display = count > 0 ? 'grid' : 'none';
+      statsEl.innerHTML = statCards;
     }
   }
 
