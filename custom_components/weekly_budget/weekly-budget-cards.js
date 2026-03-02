@@ -60,6 +60,89 @@ if (!customElements.get('wb-entity-editor')) {
 }
 
 
+/* ── Expenses Card Editor ────────────────────────────────────── */
+
+class WbExpensesEditor extends HTMLElement {
+  constructor() {
+    super();
+    this._config = {};
+    this._hass = null;
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    var picker = this.querySelector('ha-entity-picker');
+    if (picker) picker.hass = hass;
+  }
+
+  setConfig(config) {
+    this._config = Object.assign({}, config);
+    this._render();
+  }
+
+  _render() {
+    var cfg = this._config;
+    var allowEdit = cfg.allow_editing === true;
+
+    this.innerHTML =
+      '<div style="padding:16px 0">' +
+        '<ha-entity-picker allow-custom-entity></ha-entity-picker>' +
+        '<p style="margin:8px 0 16px;font-size:12px;color:var(--secondary-text-color)">' +
+          'Select a weekly_budget sensor (e.g. Budget Remaining)' +
+        '</p>' +
+        '<div style="font-weight:600;margin-bottom:12px">Options</div>' +
+        '<label style="display:flex;align-items:center;gap:10px;cursor:pointer">' +
+          '<input type="checkbox" id="wbe-allow-edit"' + (allowEdit ? ' checked' : '') +
+            ' style="width:18px;height:18px;cursor:pointer;accent-color:var(--primary-color,#2563eb)"/>' +
+          '<span style="font-size:14px">Allow editing and deleting expenses</span>' +
+        '</label>' +
+      '</div>';
+
+    var picker = this.querySelector('ha-entity-picker');
+    if (picker) {
+      if (this._hass) picker.hass = this._hass;
+      picker.value = cfg.entity || '';
+      picker.includeDomains = ['sensor'];
+      picker.entityFilter = function(stateObj) {
+        var id = stateObj.entity_id;
+        return id.indexOf('weekly_budget') !== -1 ||
+               id.indexOf('budget_remaining') !== -1 ||
+               id.indexOf('budget_spent') !== -1 ||
+               id.indexOf('budget_rollover') !== -1 ||
+               id.indexOf('weekly_limit') !== -1;
+      };
+      var self = this;
+      picker.addEventListener('value-changed', function(ev) {
+        if (!ev.detail || ev.detail.value === self._config.entity) return;
+        self._config = Object.assign({}, self._config, { entity: ev.detail.value });
+        self._fire();
+      });
+    }
+
+    var self = this;
+    var cb = this.querySelector('#wbe-allow-edit');
+    if (cb) {
+      cb.addEventListener('change', function() {
+        self._config = Object.assign({}, self._config, { allow_editing: this.checked });
+        self._fire();
+      });
+    }
+  }
+
+  _fire() {
+    this.dispatchEvent(new CustomEvent('config-changed', {
+      detail: { config: this._config },
+      bubbles: true,
+      composed: true
+    }));
+  }
+}
+
+if (!customElements.get('wb-expenses-editor')) {
+  customElements.define('wb-expenses-editor', WbExpensesEditor);
+}
+
+
 /* ── Overview Card Editor ────────────────────────────────────── */
 
 class WbOverviewEditor extends HTMLElement {
@@ -362,14 +445,16 @@ class WeeklyBudgetExpensesCard extends HTMLElement {
     this._hass = null;
     this._config = {};
     this._built = false;
+    this._editingIndex = -1;
   }
 
   static getConfigElement() {
-    return document.createElement('wb-entity-editor');
+    return document.createElement('wb-expenses-editor');
   }
 
   static getStubConfig(hass) {
-    return WeeklyBudgetCard.getStubConfig(hass);
+    var base = WeeklyBudgetCard.getStubConfig(hass);
+    return { entity: base.entity, allow_editing: false };
   }
 
   setConfig(config) {
@@ -409,12 +494,17 @@ class WeeklyBudgetExpensesCard extends HTMLElement {
     var a = s.attributes || {};
     var exps = a.expenses || [];
     var cur = a.currency || '$';
+    var canEdit = this._config.allow_editing === true;
+
     if (!exps.length) {
       listEl.innerHTML = '<div style="color:#999;text-align:center;padding:20px">No expenses recorded yet</div>';
       return;
     }
+
     var total = 0;
-    var h = '<div style="display:grid;grid-template-columns:auto auto auto 1fr;gap:2px 12px;align-items:baseline;font-size:14px;line-height:1.8;text-align:left">';
+    var cols = canEdit ? 'auto auto auto 1fr auto' : 'auto auto auto 1fr';
+    var h = '<div style="display:grid;grid-template-columns:' + cols + ';gap:2px 12px;align-items:center;font-size:14px;line-height:1.8;text-align:left">';
+
     for (var i = exps.length - 1; i >= 0; i--) {
       var e = exps[i];
       var ea = parseFloat(e.amount) || 0;
@@ -426,16 +516,93 @@ class WeeklyBudgetExpensesCard extends HTMLElement {
       }
       var user = e.user || 'Unknown';
       var desc = e.description || '';
-      h +=
-        '<div style="color:#888;white-space:nowrap">' + dateStr + '</div>' +
-        '<div style="font-weight:600;white-space:nowrap">' + cur + ea.toFixed(2) + '</div>' +
-        '<div style="white-space:nowrap">' + user + '</div>' +
-        '<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + desc + '</div>';
+
+      if (canEdit && this._editingIndex === i) {
+        /* Inline edit row */
+        h +=
+          '<div style="color:#888;white-space:nowrap">' + dateStr + '</div>' +
+          '<div><input type="number" data-edit-amt="' + i + '" value="' + ea.toFixed(2) + '" step="0.01" min="0.01" style="width:70px;padding:2px 4px;border:1px solid #d1d5db;border-radius:4px;font-size:13px"/></div>' +
+          '<div style="white-space:nowrap">' + user + '</div>' +
+          '<div><input type="text" data-edit-desc="' + i + '" value="' + desc.replace(/"/g, '&quot;') + '" style="width:100%;padding:2px 4px;border:1px solid #d1d5db;border-radius:4px;font-size:13px;box-sizing:border-box"/></div>' +
+          '<div style="display:flex;gap:4px;white-space:nowrap">' +
+            '<button data-save="' + i + '" style="background:#16a34a;color:white;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:12px;font-weight:600">Save</button>' +
+            '<button data-cancel style="background:#6b7280;color:white;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:12px">Cancel</button>' +
+          '</div>';
+      } else {
+        h +=
+          '<div style="color:#888;white-space:nowrap">' + dateStr + '</div>' +
+          '<div style="font-weight:600;white-space:nowrap">' + cur + ea.toFixed(2) + '</div>' +
+          '<div style="white-space:nowrap">' + user + '</div>' +
+          '<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + desc + '</div>';
+        if (canEdit) {
+          h +=
+            '<div style="display:flex;gap:4px;white-space:nowrap">' +
+              '<button data-edit="' + i + '" title="Edit" style="background:none;border:none;cursor:pointer;padding:2px 4px;font-size:14px;color:#2563eb">&#9998;</button>' +
+              '<button data-del="' + i + '" title="Delete" style="background:none;border:none;cursor:pointer;padding:2px 4px;font-size:14px;color:#dc2626">&times;</button>' +
+            '</div>';
+        }
+      }
     }
     h += '</div>';
     h += '<div style="margin-top:8px;padding-top:8px;border-top:2px solid #e5e7eb;display:flex;justify-content:space-between;font-weight:700">' +
       '<span>Total</span><span>' + cur + total.toFixed(2) + '</span></div>';
     listEl.innerHTML = h;
+
+    if (!canEdit) return;
+
+    /* Wire up event handlers */
+    var self = this;
+
+    /* Edit buttons */
+    var editBtns = listEl.querySelectorAll('[data-edit]');
+    for (var ei = 0; ei < editBtns.length; ei++) {
+      editBtns[ei].addEventListener('click', function() {
+        self._editingIndex = parseInt(this.getAttribute('data-edit'));
+        self._updateDisplay();
+      });
+    }
+
+    /* Delete buttons */
+    var delBtns = listEl.querySelectorAll('[data-del]');
+    for (var di = 0; di < delBtns.length; di++) {
+      delBtns[di].addEventListener('click', function() {
+        var idx = parseInt(this.getAttribute('data-del'));
+        if (self._hass) {
+          self._hass.callService('weekly_budget', 'delete_expense', { index: idx });
+        }
+      });
+    }
+
+    /* Save buttons */
+    var saveBtns = listEl.querySelectorAll('[data-save]');
+    for (var si = 0; si < saveBtns.length; si++) {
+      saveBtns[si].addEventListener('click', function() {
+        var idx = parseInt(this.getAttribute('data-save'));
+        var amtInput = listEl.querySelector('[data-edit-amt="' + idx + '"]');
+        var descInput = listEl.querySelector('[data-edit-desc="' + idx + '"]');
+        if (self._hass && amtInput && descInput) {
+          var newAmt = parseFloat(amtInput.value);
+          var newDesc = descInput.value.trim();
+          if (newAmt > 0 && newDesc) {
+            self._hass.callService('weekly_budget', 'edit_expense', {
+              index: idx,
+              amount: newAmt,
+              description: newDesc
+            });
+          }
+        }
+        self._editingIndex = -1;
+      });
+    }
+
+    /* Cancel buttons */
+    var cancelBtns = listEl.querySelectorAll('[data-cancel]');
+    for (var ci = 0; ci < cancelBtns.length; ci++) {
+      cancelBtns[ci].addEventListener('click', function() {
+        self._editingIndex = -1;
+        self._updateDisplay();
+      });
+    }
   }
 
   getCardSize() { return 5; }

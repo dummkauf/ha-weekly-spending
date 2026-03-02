@@ -37,6 +37,8 @@ from .const import (
     ATTR_WEEKLY_LIMIT,
     ATTR_SPENT,
     SERVICE_ADD_EXPENSE,
+    SERVICE_EDIT_EXPENSE,
+    SERVICE_DELETE_EXPENSE,
     SERVICE_RESET_BUDGET,
     SERVICE_SET_WEEKLY_LIMIT,
 )
@@ -54,6 +56,20 @@ ADD_EXPENSE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_AMOUNT): vol.Coerce(float),
         vol.Required(ATTR_DESCRIPTION): cv.string,
+    }
+)
+
+EDIT_EXPENSE_SCHEMA = vol.Schema(
+    {
+        vol.Required("index"): vol.Coerce(int),
+        vol.Optional(ATTR_AMOUNT): vol.Coerce(float),
+        vol.Optional(ATTR_DESCRIPTION): cv.string,
+    }
+)
+
+DELETE_EXPENSE_SCHEMA = vol.Schema(
+    {
+        vol.Required("index"): vol.Coerce(int),
     }
 )
 
@@ -248,6 +264,25 @@ class BudgetData:
         await self.async_save()
         async_dispatcher_send(self.hass, SIGNAL_BUDGET_UPDATED)
 
+    async def async_edit_expense(self, index: int, amount: float | None = None, description: str | None = None) -> None:
+        if index < 0 or index >= len(self.expenses):
+            _LOGGER.warning("Edit expense: index %d out of range (have %d)", index, len(self.expenses))
+            return
+        if amount is not None:
+            self.expenses[index][ATTR_AMOUNT] = round(amount, 2)
+        if description is not None:
+            self.expenses[index][ATTR_DESCRIPTION] = description
+        await self.async_save()
+        async_dispatcher_send(self.hass, SIGNAL_BUDGET_UPDATED)
+
+    async def async_delete_expense(self, index: int) -> None:
+        if index < 0 or index >= len(self.expenses):
+            _LOGGER.warning("Delete expense: index %d out of range (have %d)", index, len(self.expenses))
+            return
+        self.expenses.pop(index)
+        await self.async_save()
+        async_dispatcher_send(self.hass, SIGNAL_BUDGET_UPDATED)
+
     async def async_reset_budget(self) -> None:
         self.rollover = 0.0
         self.expenses = []
@@ -300,6 +335,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 if isinstance(data, BudgetData):
                     await data.async_reset_budget()
 
+        async def handle_edit_expense(call: ServiceCall) -> None:
+            index = call.data["index"]
+            amount = call.data.get(ATTR_AMOUNT)
+            description = call.data.get(ATTR_DESCRIPTION)
+            for data in hass.data[DOMAIN].values():
+                if isinstance(data, BudgetData):
+                    await data.async_edit_expense(index, amount, description)
+
+        async def handle_delete_expense(call: ServiceCall) -> None:
+            index = call.data["index"]
+            for data in hass.data[DOMAIN].values():
+                if isinstance(data, BudgetData):
+                    await data.async_delete_expense(index)
+
         async def handle_set_weekly_limit(call: ServiceCall) -> None:
             amount = call.data[ATTR_AMOUNT]
             for data in hass.data[DOMAIN].values():
@@ -308,6 +357,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         hass.services.async_register(
             DOMAIN, SERVICE_ADD_EXPENSE, handle_add_expense, schema=ADD_EXPENSE_SCHEMA
+        )
+        hass.services.async_register(
+            DOMAIN, SERVICE_EDIT_EXPENSE, handle_edit_expense, schema=EDIT_EXPENSE_SCHEMA
+        )
+        hass.services.async_register(
+            DOMAIN, SERVICE_DELETE_EXPENSE, handle_delete_expense, schema=DELETE_EXPENSE_SCHEMA
         )
         hass.services.async_register(
             DOMAIN, SERVICE_RESET_BUDGET, handle_reset_budget
@@ -343,6 +398,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         if not has_entries:
             hass.services.async_remove(DOMAIN, SERVICE_ADD_EXPENSE)
+            hass.services.async_remove(DOMAIN, SERVICE_EDIT_EXPENSE)
+            hass.services.async_remove(DOMAIN, SERVICE_DELETE_EXPENSE)
             hass.services.async_remove(DOMAIN, SERVICE_RESET_BUDGET)
             hass.services.async_remove(DOMAIN, SERVICE_SET_WEEKLY_LIMIT)
     return unload_ok

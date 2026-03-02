@@ -35,6 +35,8 @@ ATTR_REMAINING = "remaining"
 ATTR_CURRENCY = "currency"
 
 SERVICE_ADD_EXPENSE = "add_expense"
+SERVICE_EDIT_EXPENSE = "edit_expense"
+SERVICE_DELETE_EXPENSE = "delete_expense"
 SERVICE_RESET_BUDGET = "reset_budget"
 SERVICE_SET_WEEKLY_LIMIT = "set_weekly_limit"
 
