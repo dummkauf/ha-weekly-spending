@@ -480,6 +480,45 @@ class WeeklyBudgetExpensesCard extends HTMLElement {
       '</ha-card>';
   }
 
+  /* Poll for updated state after a service call. HA's set hass may
+     take a moment to fire after the backend dispatches SIGNAL_BUDGET_UPDATED.
+     We snapshot the current expense count/total before the call, then
+     check periodically until the state actually changes. */
+  _waitForStateChange(prevExpCount, prevTotal) {
+    var self = this;
+    var attempts = 0;
+    var maxAttempts = 10;
+    function check() {
+      attempts++;
+      if (!self._hass || !self._config || !self._config.entity) return;
+      var s = self._hass.states[self._config.entity];
+      if (s) {
+        var a = s.attributes || {};
+        var exps = a.expenses || [];
+        var total = 0;
+        for (var i = 0; i < exps.length; i++) total += parseFloat(exps[i].amount) || 0;
+        if (exps.length !== prevExpCount || Math.abs(total - prevTotal) > 0.001) {
+          self._updateDisplay();
+          return;
+        }
+      }
+      if (attempts < maxAttempts) {
+        setTimeout(check, 300);
+      }
+    }
+    setTimeout(check, 300);
+  }
+
+  _getExpenseSnapshot() {
+    if (!this._hass || !this._config || !this._config.entity) return { count: 0, total: 0 };
+    var s = this._hass.states[this._config.entity];
+    if (!s) return { count: 0, total: 0 };
+    var exps = (s.attributes || {}).expenses || [];
+    var total = 0;
+    for (var i = 0; i < exps.length; i++) total += parseFloat(exps[i].amount) || 0;
+    return { count: exps.length, total: total };
+  }
+
   _updateDisplay() {
     if (!this._hass || !this._config || !this._config.entity) return;
     var s = this._hass.states[this._config.entity];
@@ -568,7 +607,9 @@ class WeeklyBudgetExpensesCard extends HTMLElement {
       delBtns[di].addEventListener('click', function() {
         var idx = parseInt(this.getAttribute('data-del'));
         if (self._hass) {
+          var snap = self._getExpenseSnapshot();
           self._hass.callService('weekly_budget', 'delete_expense', { index: idx });
+          self._waitForStateChange(snap.count, snap.total);
         }
       });
     }
@@ -584,14 +625,19 @@ class WeeklyBudgetExpensesCard extends HTMLElement {
           var newAmt = parseFloat(amtInput.value);
           var newDesc = descInput.value.trim();
           if (newAmt > 0 && newDesc) {
+            var snap = self._getExpenseSnapshot();
             self._hass.callService('weekly_budget', 'edit_expense', {
               index: idx,
               amount: newAmt,
               description: newDesc
             });
+            self._editingIndex = -1;
+            self._waitForStateChange(snap.count, snap.total);
+            return;
           }
         }
         self._editingIndex = -1;
+        self._updateDisplay();
       });
     }
 
